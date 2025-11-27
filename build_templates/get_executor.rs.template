@@ -1,0 +1,36 @@
+#[allow(unused_imports)]
+use crate::standout::app::types::{AppError, ErrorCode};
+use crate::client::ApiClient;
+use serde_json::Value;
+
+/// Execute the action
+#[allow(dead_code)]
+pub fn execute(
+    client: &ApiClient,
+    {INPUT_DATA_PARAM}: &Value,
+) -> Result<Value, AppError> {
+    // Make HTTP request
+{HTTP_CALL}
+}
+
+/// Get the input_schema for this action
+#[allow(dead_code)]
+pub fn input_schema(_client: &ApiClient) -> Result<serde_json::Value, AppError> {
+    let base_schema = include_str!("base_input_schema.json");
+    let schema: serde_json::Value = serde_json::from_str(base_schema).unwrap();
+
+    Ok(schema)
+}
+
+/// Get the output schema for this action
+#[allow(dead_code)]
+pub fn output_schema(_client: &ApiClient) -> Result<serde_json::Value, AppError> {
+    let base_schema = include_str!("base_output_schema.json");
+    let schema: serde_json::Value = serde_json::from_str(base_schema).unwrap();
+
+    Ok(schema)
+}
+
+{QUERY_PARAMETER_FUNCTIONS}
+
+{PATH_PARAMETER_FUNCTIONS}

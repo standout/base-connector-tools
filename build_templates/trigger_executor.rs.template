@@ -1,0 +1,187 @@
+use crate::standout::app::types::{AppError, ErrorCode};
+use crate::standout::app::types::{TriggerContext, TriggerResponse, TriggerEvent};
+use crate::client::ApiClient;
+use serde_json::Value;
+
+/// Fetches events for the trigger
+///
+/// This function implements a polling mechanism using store data to track state
+/// between runs. The store typically contains timestamps and other state information.
+///
+/// # Store Structure
+/// The context.store contains JSON data that persists between trigger runs.
+/// Common structure:
+/// - `since`: ISO 8601 timestamp for filtering data "since" this time
+/// - Other custom fields as needed for the specific trigger
+///
+/// # How to read store data:
+/// ```rust
+/// let store_data: Value = if context.store.is_empty() {
+///     serde_json::json!({})
+/// } else {
+///     serde_json::from_str(&context.store)
+///         .map_err(|e| AppError {
+///             code: ErrorCode::Other,
+///             message: format!("Failed to parse store: {}", e),
+///         })?
+/// };
+///
+/// // Read timestamp from store
+/// let since = store_data.get("since")
+///     .and_then(|v| v.as_str())
+///     .map(|s| s.to_string());
+/// ```
+///
+/// # How to update store data:
+/// ```rust
+/// let updated_store = serde_json::json!({
+///     "since": current_timestamp.to_rfc3339(),
+///     // ... other fields
+/// });
+/// let store_string = serde_json::to_string(&updated_store)
+///     .map_err(|e| AppError {
+///         code: ErrorCode::Other,
+///         message: format!("Failed to serialize store: {}", e),
+///     })?;
+/// ```
+pub fn fetch_events(context: TriggerContext) -> Result<TriggerResponse, AppError> {
+    // Parse connection data to create ApiClient
+    let connection_data: serde_json::Value =
+        serde_json::from_str(&context.connection.serialized_data).map_err(|e| AppError {
+            code: ErrorCode::Other,
+            message: format!("Invalid connection configuration: {}", e),
+        })?;
+    let api_client = ApiClient::new(&connection_data)?;
+
+    // Parse store data to get state from previous runs
+    // TODO: Customize store parsing based on your trigger's needs
+    let store_data: Value = if context.store.is_empty() {
+        serde_json::json!({})
+    } else {
+        serde_json::from_str(&context.store)
+            .map_err(|e| AppError {
+                code: ErrorCode::Other,
+                message: format!("Failed to parse store: {}", e),
+            })?
+    };
+
+    // TODO: Read timestamp or other state from store_data
+    // Example:
+    // let since = store_data.get("since")
+    //     .and_then(|v| v.as_str())
+    //     .map(|s| s.to_string());
+
+    // Make API call to fetch data
+{HTTP_CALL}
+
+    // ApiClient::get() already returns parsed JSON Value
+    let _response_data: Value = api_client.get(&full_endpoint)?;
+
+    // TODO: Process response_data into events
+    // Extract the array of items from the response
+    // Example:
+    // let items = response_data.get("data")
+    //     .and_then(|d| d.as_array())
+    //     .cloned()
+    //     .unwrap_or_else(Vec::new);
+    //
+    // let mut events = Vec::new();
+    // for (index, item) in items.iter().enumerate() {
+    //     // Create event data
+    //     let event_data = serde_json::json!({
+    //         "item": item
+    //     });
+    //
+    //     let event = TriggerEvent {
+    //         id: format!("{}-{}", index, chrono::Utc::now().timestamp_millis()),
+    //         serialized_data: serde_json::to_string(&event_data)?,
+    //     };
+    //     events.push(event);
+    // }
+
+    // Placeholder: return empty events for now
+    let events: Vec<TriggerEvent> = Vec::new();
+
+    // TODO: Update store data with new state
+    // Example:
+    // let current_timestamp = chrono::Utc::now();
+    // let updated_store = serde_json::json!({
+    //     "since": current_timestamp.to_rfc3339(),
+    // });
+    // let store_string = serde_json::to_string(&updated_store)
+    //     .map_err(|e| AppError {
+    //         code: ErrorCode::Other,
+    //         message: format!("Failed to serialize store: {}", e),
+    //     })?;
+
+    // Placeholder: keep existing store for now
+    let store_string = context.store;
+
+    Ok(TriggerResponse {
+        events,
+        store: store_string,
+    })
+}
+
+/// Get the input schema for this trigger
+#[allow(dead_code)]
+pub fn input_schema(_client: &ApiClient) -> Result<serde_json::Value, AppError> {
+    let base_schema = include_str!("input_schema.json");
+    let schema: serde_json::Value = serde_json::from_str(base_schema).unwrap();
+    Ok(schema)
+}
+
+/// Get the output schema for this trigger
+#[allow(dead_code)]
+pub fn output_schema(_client: &ApiClient) -> Result<serde_json::Value, AppError> {
+    let base_schema = include_str!("output_schema.json");
+    let schema: serde_json::Value = serde_json::from_str(base_schema).unwrap();
+    Ok(schema)
+}
+
+/// Add a query parameter to the query_parts vector if it exists in store_data
+#[allow(dead_code)]
+fn add_query_parameter(store_data: &Value, param_name: &str, query_parts: &mut Vec<String>) {
+    if let Some(value) = store_data.get(param_name) {
+        if let Some(str_val) = value.as_str() {
+            if !str_val.is_empty() {
+                query_parts.push(format!("{}={}", param_name, urlencoding::encode(str_val)));
+            }
+        } else if let Some(int_val) = value.as_i64() {
+            query_parts.push(format!("{}={}", param_name, int_val));
+        } else if let Some(bool_val) = value.as_bool() {
+            query_parts.push(format!("{}={}", param_name, bool_val));
+        }
+    }
+}
+
+/// Build query parameters from store data
+#[allow(dead_code)]
+fn build_query_parameters(store_data: &Value) -> Result<String, AppError> {
+    let mut query_parts: Vec<String> = Vec::new();
+{QUERY_PARAMETER_BUILDING}
+    Ok(query_parts.join("&"))
+}
+
+/// Extract path parameters from store data
+#[allow(dead_code)]
+fn extract_path_parameters(_store_data: &Value) -> Result<serde_json::Map<String, Value>, AppError> {
+    let params = serde_json::Map::new();
+
+{PATH_PARAMETER_EXTRACTION}
+
+    Ok(params)
+}
+
+/// Build endpoint URL with path parameters
+#[allow(dead_code)]
+fn build_endpoint(path_template: &str, params: &serde_json::Map<String, Value>) -> String {
+    let mut endpoint = path_template.to_string();
+    for (key, value) in params {
+        if let Some(value_str) = value.as_str() {
+            endpoint = endpoint.replace(&format!("{{{}}}", key), value_str);
+        }
+    }
+    endpoint
+}
+
