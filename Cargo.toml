@@ -13,7 +13,7 @@ path = "src/lib.rs"
 
 [[bin]]
 name = "endpoints"
-path = "src/bin/discover_actions.rs"
+path = "src/bin/endpoints.rs"
 
 [[bin]]
 name = "generate_action"

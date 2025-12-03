@@ -29,13 +29,23 @@ cargo install --path . --bin generate_trigger
 Discover available endpoints from an OpenAPI specification:
 
 ```bash
-endpoints <openapi_url>
+endpoints <openapi_url_or_file>
 ```
 
-**Example:**
+**Examples:**
 ```bash
+# From URL
 endpoints https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json
+
+# From local file (relative to current directory)
+endpoints ./openapi.yaml
+endpoints openapi.json
+
+# From local file (absolute path)
+endpoints /path/to/openapi.json
 ```
+
+**Note:** When using `./example.json` or `example.json`, the file should be in the current working directory where you run the command. You can also use absolute paths like `/path/to/file.json`.
 
 This will list all available operations with their HTTP methods and paths.
 
@@ -44,13 +54,26 @@ This will list all available operations with their HTTP methods and paths.
 Generate action code and schemas for a specific operation:
 
 ```bash
-generate_action <openapi_url> <operation_id>
+generate_action <openapi_url_or_file> <operation_id> [action_name]
 ```
 
-**Example:**
+**Examples:**
 ```bash
+# From URL (uses default name derived from operation_id)
 generate_action https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json repos/get
+
+# From local file (relative to current directory) with custom name
+generate_action ./openapi.yaml repos/get my_custom_action
+generate_action openapi.json repos/get
+
+# From local file (absolute path)
+generate_action /path/to/openapi.yaml repos/get
 ```
+
+**Parameters:**
+- `<openapi_url_or_file>` - URL or path to OpenAPI specification file
+- `<operation_id>` - The operation ID from the OpenAPI spec
+- `[action_name]` - (Optional) Custom name for the action in snake_case format. If omitted, the name will be derived from `operation_id`.
 
 This will:
 - Generate `base_input_schema.json` - Input schema for the action
@@ -64,13 +87,28 @@ The generated files will be placed in `src/actions/<action_name>/` directory.
 Generate trigger code and schemas for a specific operation:
 
 ```bash
-generate_trigger <openapi_url> <operation_id>
+generate_trigger <openapi_url_or_file> <operation_id> [trigger_name]
 ```
 
-**Example:**
+**Examples:**
 ```bash
+# From URL (uses default name derived from operation_id)
 generate_trigger https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json repos/list
+
+# From local file (relative to current directory) with custom name
+generate_trigger ./openapi.yaml repos/list my_custom_trigger
+generate_trigger openapi.json repos/list
+
+# From local file (absolute path)
+generate_trigger /path/to/openapi.yaml repos/list
 ```
+
+**Note:** When using `./example.json` or `example.json`, the file should be in the current working directory where you run the command.
+
+**Parameters:**
+- `<openapi_url_or_file>` - URL or path to OpenAPI specification file
+- `<operation_id>` - The operation ID from the OpenAPI spec
+- `[trigger_name]` - (Optional) Custom name for the trigger in snake_case format. If omitted, the name will be derived from `operation_id`.
 
 This will:
 - Generate `input_schema.json` - Input schema for the trigger (typically empty)

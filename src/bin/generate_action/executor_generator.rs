@@ -320,8 +320,8 @@ fn generate_http_call(method: &str, api_path: &str, parameters: &[Value]) -> (St
             if has_path_params && has_query_params {
                 (
                     format!(
-                        r#"    let endpoint = build_endpoint("{}", &extract_path_parameters(input_data)?);
-    let query_params = build_query_parameters(input_data)?;
+                        r#"    let endpoint = build_endpoint("{}", &extract_path_parameters(&input_data)?);
+    let query_params = build_query_parameters(&input_data)?;
     let full_endpoint = if query_params.is_empty() {{
         endpoint
     }} else {{
@@ -338,7 +338,7 @@ fn generate_http_call(method: &str, api_path: &str, parameters: &[Value]) -> (St
             } else if has_path_params {
                 (
                     format!(
-                        r#"    let endpoint = build_endpoint("{}", &extract_path_parameters(input_data)?);
+                        r#"    let endpoint = build_endpoint("{}", &extract_path_parameters(&input_data)?);
     let response = client.get(&endpoint)?;
 
     Ok(response)
@@ -351,7 +351,7 @@ fn generate_http_call(method: &str, api_path: &str, parameters: &[Value]) -> (St
                 (
                     format!(
                         r#"    let endpoint = "{}".to_string();
-    let query_params = build_query_parameters(input_data)?;
+    let query_params = build_query_parameters(&input_data)?;
     let full_endpoint = if query_params.is_empty() {{
         endpoint
     }} else {{
@@ -383,7 +383,7 @@ fn generate_http_call(method: &str, api_path: &str, parameters: &[Value]) -> (St
             if has_path_params {
                 (
                     format!(
-                        r#"    let endpoint = build_endpoint("{}", &extract_path_parameters(input_data)?);
+                        r#"    let endpoint = build_endpoint("{}", &extract_path_parameters(&input_data)?);
     let response = client.post(&endpoint, &request_body).map_err(|e| AppError {{
         code: ErrorCode::Other,
         message: format!("POST request failed - URL: API base URL{{}}, Body: {{}}, Error: {{}}",
@@ -418,7 +418,7 @@ fn generate_http_call(method: &str, api_path: &str, parameters: &[Value]) -> (St
             if has_path_params {
                 (
                     format!(
-                        r#"    let endpoint = build_endpoint("{}", &extract_path_parameters(input_data)?);
+                        r#"    let endpoint = build_endpoint("{}", &extract_path_parameters(&input_data)?);
     let response = client.patch(&endpoint, &request_body).map_err(|e| AppError {{
         code: ErrorCode::Other,
         message: format!("PATCH request failed - URL: API base URL{{}}, Body: {{}}, Error: {{}}",
@@ -453,7 +453,7 @@ fn generate_http_call(method: &str, api_path: &str, parameters: &[Value]) -> (St
             if has_path_params {
                 (
                     format!(
-                        r#"    let endpoint = build_endpoint("{}", &extract_path_parameters(input_data)?);
+                        r#"    let endpoint = build_endpoint("{}", &extract_path_parameters(&input_data)?);
     let response = client.put(&endpoint, &request_body).map_err(|e| AppError {{
         code: ErrorCode::Other,
         message: format!("PUT request failed - URL: API base URL{{}}, Body: {{}}, Error: {{}}",
@@ -488,7 +488,7 @@ fn generate_http_call(method: &str, api_path: &str, parameters: &[Value]) -> (St
             if has_path_params {
                 (
                     format!(
-                        r#"    let endpoint = build_endpoint("{}", &extract_path_parameters(input_data)?);
+                        r#"    let endpoint = build_endpoint("{}", &extract_path_parameters(&input_data)?);
     let response = client.delete(&endpoint)?;
 
     Ok(response)

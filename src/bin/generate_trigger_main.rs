@@ -13,11 +13,16 @@ fn main() -> Result<(), GenerateTriggerError> {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 3 {
-        println!("Usage: generate_trigger <openapi_url> <operation_id> [trigger_name]");
+        println!("Usage: generate_trigger <openapi_url_or_file> <operation_id> [trigger_name]");
         println!("Example: generate_trigger https://api.example.com/openapi.yaml getUsers");
-        println!("Example: generate_trigger https://api.example.com/openapi.yaml getUsers my_custom_name");
-        println!("\nTo see available endpoints, run: endpoints <openapi_url>");
-        println!("\nIf trigger_name is omitted, it will be derived from operation_id (snake_case).");
+        println!("Example: generate_trigger ./openapi.yaml getUsers");
+        println!(
+            "Example: generate_trigger https://api.example.com/openapi.yaml getUsers my_custom_name"
+        );
+        println!("\nTo see available endpoints, run: endpoints <openapi_url_or_file>");
+        println!(
+            "\nIf trigger_name is omitted, it will be derived from operation_id (snake_case)."
+        );
         return Ok(());
     }
 
@@ -26,8 +31,13 @@ fn main() -> Result<(), GenerateTriggerError> {
     let trigger_name = if args.len() >= 4 {
         let provided_name = &args[3];
         // Validate that the provided name is in snake_case format
-        if !provided_name.chars().all(|c| c.is_lowercase() || c.is_ascii_digit() || c == '_') {
-            println!("Error: trigger_name must be in snake_case format (lowercase letters, digits, and underscores only)");
+        if !provided_name
+            .chars()
+            .all(|c| c.is_lowercase() || c.is_ascii_digit() || c == '_')
+        {
+            println!(
+                "Error: trigger_name must be in snake_case format (lowercase letters, digits, and underscores only)"
+            );
             return Ok(());
         }
         provided_name.to_string()
@@ -35,10 +45,18 @@ fn main() -> Result<(), GenerateTriggerError> {
         to_snake_case(operation_id)
     };
     println!("Generating trigger for operationId: {}", operation_id);
-    println!("Using OpenAPI spec from: {}", openapi_url);
+    if openapi_url.starts_with("http://") || openapi_url.starts_with("https://") {
+        println!("Fetching OpenAPI spec from: {}", openapi_url);
+    } else {
+        println!("Reading OpenAPI spec from: {}", openapi_url);
+    }
 
-    // Download the schema
-    let schema_yaml = reqwest::blocking::get(openapi_url)?.text()?;
+    // Load the schema from URL or file
+    let schema_yaml = if openapi_url.starts_with("http://") || openapi_url.starts_with("https://") {
+        reqwest::blocking::get(openapi_url)?.text()?
+    } else {
+        fs::read_to_string(openapi_url)?
+    };
 
     // Parse YAML and convert to JSON
     let schema_value: serde_yaml::Value = serde_yaml::from_str(&schema_yaml)?;
@@ -59,10 +77,10 @@ fn main() -> Result<(), GenerateTriggerError> {
             trigger_name
         );
         io::stdout().flush()?;
-        
+
         let mut response = String::new();
         io::stdin().read_line(&mut response)?;
-        
+
         let response = response.trim().to_lowercase();
         if response != "y" && response != "yes" {
             println!("Cancelled.");

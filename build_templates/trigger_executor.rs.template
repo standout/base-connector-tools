@@ -44,26 +44,42 @@ use serde_json::Value;
 ///         message: format!("Failed to serialize store: {}", e),
 ///     })?;
 /// ```
-pub fn fetch_events(context: TriggerContext) -> Result<TriggerResponse, AppError> {
-    // Parse connection data to create ApiClient
+/// Get the ApiClient from context
+#[allow(dead_code)]
+fn client(context: &TriggerContext) -> Result<ApiClient, AppError> {
     let connection_data: serde_json::Value =
         serde_json::from_str(&context.connection.serialized_data).map_err(|e| AppError {
             code: ErrorCode::Other,
             message: format!("Invalid connection configuration: {}", e),
         })?;
-    let api_client = ApiClient::new(&connection_data)?;
+    ApiClient::new(&connection_data)
+}
 
-    // Parse store data to get state from previous runs
-    // TODO: Customize store parsing based on your trigger's needs
-    let store_data: Value = if context.store.is_empty() {
-        serde_json::json!({})
+/// Get the input data from context
+#[allow(dead_code)]
+fn input_data(context: &TriggerContext) -> Result<Value, AppError> {
+    serde_json::from_str(&context.serialized_input).map_err(|e| AppError {
+        code: ErrorCode::Other,
+        message: format!("Invalid input data: {}", e),
+    })
+}
+
+/// Get the store data from context
+#[allow(dead_code)]
+fn store_data(context: &TriggerContext) -> Result<Value, AppError> {
+    if context.store.is_empty() {
+        Ok(serde_json::json!({}))
     } else {
-        serde_json::from_str(&context.store)
-            .map_err(|e| AppError {
-                code: ErrorCode::Other,
-                message: format!("Failed to parse store: {}", e),
-            })?
-    };
+        serde_json::from_str(&context.store).map_err(|e| AppError {
+            code: ErrorCode::Other,
+            message: format!("Failed to parse store: {}", e),
+        })
+    }
+}
+
+pub fn fetch_events(context: TriggerContext) -> Result<TriggerResponse, AppError> {
+    let api_client = client(&context)?;
+    let store_data = store_data(&context)?;
 
     // TODO: Read timestamp or other state from store_data
     // Example:
@@ -75,9 +91,9 @@ pub fn fetch_events(context: TriggerContext) -> Result<TriggerResponse, AppError
 {HTTP_CALL}
 
     // ApiClient::get() already returns parsed JSON Value
-    let _response_data: Value = api_client.get(&full_endpoint)?;
+    let response_data: Value = api_client.get(&full_endpoint)?;
 
-    // TODO: Process response_data into events
+    // Process response_data into events
     // Extract the array of items from the response
     // Example:
     // let items = response_data.get("data")
@@ -125,7 +141,7 @@ pub fn fetch_events(context: TriggerContext) -> Result<TriggerResponse, AppError
 
 /// Get the input schema for this trigger
 #[allow(dead_code)]
-pub fn input_schema(_client: &ApiClient) -> Result<serde_json::Value, AppError> {
+pub fn input_schema(_context: &TriggerContext) -> Result<serde_json::Value, AppError> {
     let base_schema = include_str!("input_schema.json");
     let schema: serde_json::Value = serde_json::from_str(base_schema).unwrap();
     Ok(schema)
@@ -133,7 +149,7 @@ pub fn input_schema(_client: &ApiClient) -> Result<serde_json::Value, AppError> 
 
 /// Get the output schema for this trigger
 #[allow(dead_code)]
-pub fn output_schema(_client: &ApiClient) -> Result<serde_json::Value, AppError> {
+pub fn output_schema(_context: &TriggerContext) -> Result<serde_json::Value, AppError> {
     let base_schema = include_str!("output_schema.json");
     let schema: serde_json::Value = serde_json::from_str(base_schema).unwrap();
     Ok(schema)
