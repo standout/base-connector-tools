@@ -1,6 +1,6 @@
 use crate::standout::app::types::{AppError, ErrorCode, ActionContext};
 use crate::client::ApiClient;
-use crate::actions::utils::request_body_without_empty_values;
+{HAS_REQUEST_BODY_IMPORT}
 use serde_json::Value;
 
 /// Get the ApiClient from context
@@ -27,7 +27,7 @@ fn input_data(context: &ActionContext) -> Result<Value, AppError> {
 #[allow(dead_code)]
 pub fn execute(context: ActionContext) -> Result<Value, AppError> {
     let client = client(&context)?;
-    let input_data = input_data(&context)?;
+{INPUT_DATA_DECLARATION}
 
     // Prepare request body
 {BODY_HANDLING}

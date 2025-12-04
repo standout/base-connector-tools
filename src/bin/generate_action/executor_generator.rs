@@ -69,10 +69,14 @@ pub fn generate_executor_code(
     let has_path_params = !path_param_names.contains("__none__");
 
     // Generate request body handling
-    let body_handling = generate_body_handling(&request_body_schema, &path_param_names)?;
+    let (body_handling, has_request_body) =
+        generate_body_handling(&request_body_schema, &path_param_names)?;
 
     // Generate HTTP method call using the API path
     let (http_call, input_data_used) = generate_http_call(method, api_path, &parameters);
+
+    // For POST/PATCH/PUT, input_data is used if there are path params or request body
+    let input_data_used_for_post_patch_put = has_path_params || has_request_body;
 
     // Generate different code based on HTTP method
     let executor_code = if method.to_lowercase() == "get" {
@@ -92,6 +96,8 @@ pub fn generate_executor_code(
             &http_call,
             &path_param_names,
             has_path_params,
+            has_request_body,
+            input_data_used_for_post_patch_put,
             &parameters,
         )?
     };
@@ -217,12 +223,15 @@ fn generate_delete_executor_code(
 }
 
 /// Generate POST/PATCH executor code
+#[allow(clippy::too_many_arguments)]
 fn generate_post_patch_executor_code(
     action_name: &str,
     body_handling: &str,
     http_call: &str,
     path_param_names: &str,
     has_path_params: bool,
+    has_request_body: bool,
+    input_data_used: bool,
     parameters: &[Value],
 ) -> Result<String, GenerateActionError> {
     // Initialize template manager and load templates
@@ -254,15 +263,32 @@ fn generate_post_patch_executor_code(
         "PATH_PARAMETER_FUNCTIONS".to_string(),
         path_parameter_functions,
     );
+    variables.insert(
+        "HAS_REQUEST_BODY_IMPORT".to_string(),
+        if has_request_body {
+            "use crate::actions::utils::request_body_without_empty_values;".to_string()
+        } else {
+            String::new()
+        },
+    );
+    variables.insert(
+        "INPUT_DATA_DECLARATION".to_string(),
+        if input_data_used {
+            "    let input_data = input_data(&context)?;".to_string()
+        } else {
+            String::new()
+        },
+    );
 
     template_manager.render("post_patch_executor", &variables)
 }
 
 /// Generate body handling code
+/// Returns (body_handling_code, has_request_body)
 fn generate_body_handling(
     request_body_schema: &Value,
     path_param_names: &str,
-) -> Result<String, GenerateActionError> {
+) -> Result<(String, bool), GenerateActionError> {
     if request_body_schema.is_object()
         && !request_body_schema
             .as_object()
@@ -280,17 +306,21 @@ fn generate_body_handling(
             &format!("&{:?}", params)
         };
 
-        Ok(format!(
-            r#"    let request_body = request_body_without_empty_values(input_data, {})?;
+        Ok((
+            format!(
+                r#"    let request_body = request_body_without_empty_values(&input_data, {})?;
 "#,
-            path_params
+                path_params
+            ),
+            true,
         ))
     } else {
-        Ok(
+        Ok((
             r#"    let request_body = serde_json::Value::Null; // No request body required
 "#
             .to_string(),
-        )
+            false,
+        ))
     }
 }
 
