@@ -1,0 +1,62 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+
+# Cargo
+# Uncomment the next line if you want to ignore Cargo.lock for libraries
+# Cargo.lock
+
+# IDE - Visual Studio Code
+.vscode/
+*.code-workspace
+
+# IDE - IntelliJ / RustRover
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# IDE - Vim
+*.swp
+*.swo
+*~
+
+# IDE - Emacs
+*~
+\#*\#
+.\#*
+
+# OS - macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# OS - Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# OS - Linux
+*~
+.directory
+.Trash-*
+
+# Debug
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Backup files
+*.bak
+*.orig
+*.tmp
+
+# Generated files (if any)
+*.generated.*
+
+src/triggers
+src/actions
