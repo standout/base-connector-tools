@@ -18,6 +18,13 @@ fn resolve_ref(schema: &Value, ref_path: &str) -> Option<Value> {
             }
         }
     }
+    // Handle Swagger 2.0 $ref format: #/definitions/Name
+    if let Some(definition_name) = ref_path.strip_prefix("#/definitions/")
+        && let Some(definitions) = schema.get("definitions")
+        && let Some(definition) = definitions.get(definition_name)
+    {
+        return Some(definition.clone());
+    }
     None
 }
 
@@ -250,38 +257,94 @@ pub fn generate_input_schema(
         if let Some(param_obj) = param_resolved.as_object()
             && let Some(param_in) = param_obj.get("in")
             && let Some(param_in_str) = param_in.as_str()
-            && (param_in_str == "path" || param_in_str == "query")
-            && let Some(name) = param_obj.get("name")
-            && let Some(name_str) = name.as_str()
         {
-            let mut param_schema = serde_json::Map::new();
-
-            if let Some(schema_ref) = param_obj.get("schema") {
-                let schema_resolved = resolve_schema(schema, schema_ref);
-                if let Some(schema_obj) = schema_resolved.as_object() {
-                    for (key, value) in schema_obj {
-                        param_schema.insert(key.clone(), value.clone());
-                    }
-                    // Convert enum to anyOf structure for better UX
-                    convert_enum_to_anyof(&mut param_schema);
-                }
-            } else {
-                // Default to string if no schema
-                param_schema.insert("type".to_string(), json!("string"));
-            }
-
-            all_properties.insert(name_str.to_string(), json!(param_schema));
-
-            if let Some(required) = param_obj.get("required")
-                && let Some(required_bool) = required.as_bool()
-                && required_bool
+            if (param_in_str == "path" || param_in_str == "query")
+                && let Some(name) = param_obj.get("name")
+                && let Some(name_str) = name.as_str()
             {
-                all_required.push(name_str.to_string());
+                let mut param_schema = serde_json::Map::new();
+
+                if let Some(schema_ref) = param_obj.get("schema") {
+                    let schema_resolved = resolve_schema(schema, schema_ref);
+                    if let Some(schema_obj) = schema_resolved.as_object() {
+                        for (key, value) in schema_obj {
+                            param_schema.insert(key.clone(), value.clone());
+                        }
+                        // Convert enum to anyOf structure for better UX
+                        convert_enum_to_anyof(&mut param_schema);
+                    }
+                } else {
+                    // Default to string if no schema
+                    param_schema.insert("type".to_string(), json!("string"));
+                }
+
+                all_properties.insert(name_str.to_string(), json!(param_schema));
+
+                if let Some(required) = param_obj.get("required")
+                    && let Some(required_bool) = required.as_bool()
+                    && required_bool
+                {
+                    all_required.push(name_str.to_string());
+                }
+            } else if param_in_str == "body" {
+                // Swagger 2.0: request body is a parameter with in: "body" and schema
+                if let Some(schema_ref) = param_obj.get("schema") {
+                    let body_schema = resolve_schema(schema, schema_ref);
+                    if let Some(body_obj) = body_schema.as_object() {
+                        if let Some(all_of) = body_obj.get("allOf").and_then(|a| a.as_array()) {
+                            for schema_part in all_of {
+                                let part_resolved = resolve_schema(schema, schema_part);
+                                if let Some(part_obj) = part_resolved.as_object() {
+                                    if let Some(part_props) =
+                                        part_obj.get("properties").and_then(|p| p.as_object())
+                                    {
+                                        for (key, value) in part_props {
+                                            let mut prop_value =
+                                                resolve_refs_recursive(schema, value);
+                                            if let Some(prop_obj) = prop_value.as_object_mut() {
+                                                convert_enum_to_anyof(prop_obj);
+                                            }
+                                            all_properties.insert(key.clone(), prop_value);
+                                        }
+                                    }
+                                    if let Some(req_array) =
+                                        part_obj.get("required").and_then(|r| r.as_array())
+                                    {
+                                        for req in req_array {
+                                            if let Some(req_str) = req.as_str() {
+                                                all_required.push(req_str.to_string());
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else if let Some(body_props) =
+                            body_obj.get("properties").and_then(|p| p.as_object())
+                        {
+                            for (key, value) in body_props {
+                                let mut prop_value = resolve_refs_recursive(schema, value);
+                                if let Some(prop_obj) = prop_value.as_object_mut() {
+                                    convert_enum_to_anyof(prop_obj);
+                                }
+                                all_properties.insert(key.clone(), prop_value);
+                            }
+                            if let Some(req_array) =
+                                body_obj.get("required").and_then(|r| r.as_array())
+                            {
+                                for req in req_array {
+                                    if let Some(req_str) = req.as_str() {
+                                        all_required.push(req_str.to_string());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 
-    // Extract request body schema
+    // Extract request body schema (OpenAPI 3.0)
     if let Some(request_body) = method_obj.get("requestBody") {
         let body_resolved = resolve_schema(schema, request_body);
 
@@ -364,6 +427,37 @@ pub fn generate_input_schema(
     Ok(json!(combined_schema))
 }
 
+/// Extract the resolved response schema from an operation (shared by action and trigger).
+/// Handles both OpenAPI 3.0 (content.application/json.schema) and Swagger 2.0 (response.schema).
+pub fn get_response_schema(schema: &Value, method_obj: &Value) -> Value {
+    method_obj
+        .get("responses")
+        .and_then(|responses| {
+            responses
+                .get("200")
+                .or_else(|| responses.get("201"))
+                .or_else(|| responses.get("202"))
+        })
+        .and_then(|response| {
+            let response_resolved = resolve_schema(schema, response);
+            let response_obj = response_resolved.as_object()?;
+            // OpenAPI 3.0: schema is under content.application/json.schema
+            if let Some(s) = response_obj
+                .get("content")
+                .and_then(|content| content.get("application/json"))
+                .and_then(|json| json.get("schema"))
+            {
+                return Some(resolve_schema(schema, s));
+            }
+            // Swagger 2.0: schema is directly on the response object
+            if let Some(s) = response_obj.get("schema") {
+                return Some(resolve_schema(schema, s));
+            }
+            None
+        })
+        .unwrap_or_else(|| json!({}))
+}
+
 /// Generate output schema for an action
 #[allow(dead_code)]
 pub fn generate_output_schema(
@@ -381,26 +475,7 @@ pub fn generate_output_schema(
         GenerateActionError::SchemaError(format!("No {} method found for path: {}", method, path))
     })?;
 
-    // Extract response schema - try 200, 201, 202
-    let response_schema = method_obj
-        .get("responses")
-        .and_then(|responses| {
-            responses
-                .get("200")
-                .or_else(|| responses.get("201"))
-                .or_else(|| responses.get("202"))
-        })
-        .and_then(|response| {
-            // Resolve $ref if response is a reference
-            let response_resolved = resolve_schema(schema, response);
-            response_resolved
-                .as_object()
-                .and_then(|r| r.get("content"))
-                .and_then(|content| content.get("application/json"))
-                .and_then(|json| json.get("schema"))
-                .map(|s| resolve_schema(schema, s))
-        })
-        .unwrap_or_else(|| json!({}));
+    let response_schema = get_response_schema(schema, method_obj);
 
     let mut output_schema = serde_json::Map::new();
     output_schema.insert(
@@ -416,4 +491,210 @@ pub fn generate_output_schema(
     output_schema.insert("properties".to_string(), json!(properties));
 
     Ok(json!(output_schema))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{Value, json};
+
+    /// Minimal OpenAPI 3.0 spec to ensure we don't break 3.0 when adding Swagger 2.0 support.
+    fn oas3_minimal_spec() -> Value {
+        json!({
+            "openapi": "3.0.0",
+            "paths": {
+                "/users": {
+                    "get": {
+                        "operationId": "getUsers",
+                        "parameters": [
+                            { "name": "limit", "in": "query", "schema": { "type": "integer" } }
+                        ],
+                        "responses": {
+                            "200": {
+                                "description": "OK",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": { "type": "string" },
+                                                "name": { "type": "string" }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "post": {
+                        "operationId": "createUser",
+                        "requestBody": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "email": { "type": "string" },
+                                            "name": { "type": "string" }
+                                        },
+                                        "required": ["email"]
+                                    }
+                                }
+                            }
+                        },
+                        "responses": { "201": { "description": "Created" } }
+                    }
+                }
+            }
+        })
+    }
+
+    #[test]
+    fn openapi3_response_schema_from_content() {
+        let spec = oas3_minimal_spec();
+        let out = generate_output_schema(&spec, "/users", "get").unwrap();
+        let props = out.get("properties").and_then(|p| p.as_object()).unwrap();
+        assert!(
+            props.contains_key("id"),
+            "OAS 3.0: output schema should have id from content.application/json.schema"
+        );
+        assert!(
+            props.contains_key("name"),
+            "OAS 3.0: output schema should have name"
+        );
+    }
+
+    #[test]
+    fn openapi3_input_schema_request_body() {
+        let spec = oas3_minimal_spec();
+        let out = generate_input_schema(&spec, "/users", "post").unwrap();
+        let props = out.get("properties").and_then(|p| p.as_object()).unwrap();
+        assert!(
+            props.contains_key("email"),
+            "OAS 3.0: input schema should have requestBody content schema"
+        );
+        assert!(
+            props.contains_key("name"),
+            "OAS 3.0: input schema should have name"
+        );
+        let required = out.get("required").and_then(|r| r.as_array()).unwrap();
+        assert!(
+            required.iter().any(|v| v.as_str() == Some("email")),
+            "OAS 3.0: email should be required"
+        );
+    }
+
+    #[test]
+    fn openapi3_input_schema_query_params() {
+        let spec = oas3_minimal_spec();
+        let out = generate_input_schema(&spec, "/users", "get").unwrap();
+        let props = out.get("properties").and_then(|p| p.as_object()).unwrap();
+        assert!(
+            props.contains_key("limit"),
+            "OAS 3.0: input schema should have query param limit"
+        );
+    }
+
+    /// Minimal Swagger 2.0 spec: definitions, response.schema, body param with $ref.
+    fn swagger2_minimal_spec() -> Value {
+        json!({
+            "swagger": "2.0",
+            "paths": {
+                "/items": {
+                    "get": {
+                        "operationId": "getItems",
+                        "parameters": [
+                            { "name": "page", "in": "query", "type": "integer" }
+                        ],
+                        "responses": {
+                            "200": {
+                                "description": "OK",
+                                "schema": { "$ref": "#/definitions/ItemList" }
+                            }
+                        }
+                    },
+                    "post": {
+                        "operationId": "createItem",
+                        "parameters": [
+                            {
+                                "name": "body",
+                                "in": "body",
+                                "required": true,
+                                "schema": { "$ref": "#/definitions/CreateItemRequest" }
+                            }
+                        ],
+                        "responses": { "201": { "description": "Created" } }
+                    }
+                }
+            },
+            "definitions": {
+                "ItemList": {
+                    "type": "object",
+                    "properties": {
+                        "items": {
+                            "type": "array",
+                            "items": { "$ref": "#/definitions/Item" }
+                        }
+                    }
+                },
+                "Item": {
+                    "type": "object",
+                    "properties": {
+                        "id": { "type": "string" },
+                        "title": { "type": "string" }
+                    }
+                },
+                "CreateItemRequest": {
+                    "type": "object",
+                    "properties": {
+                        "title": { "type": "string" },
+                        "amount": { "type": "number" }
+                    },
+                    "required": ["title"]
+                }
+            }
+        })
+    }
+
+    #[test]
+    fn swagger2_response_schema_from_definitions_ref() {
+        let spec = swagger2_minimal_spec();
+        let out = generate_output_schema(&spec, "/items", "get").unwrap();
+        let props = out.get("properties").and_then(|p| p.as_object()).unwrap();
+        assert!(
+            props.contains_key("items"),
+            "Swagger 2.0: output schema should resolve $ref to ItemList and have items"
+        );
+    }
+
+    #[test]
+    fn swagger2_input_schema_body_param() {
+        let spec = swagger2_minimal_spec();
+        let out = generate_input_schema(&spec, "/items", "post").unwrap();
+        let props = out.get("properties").and_then(|p| p.as_object()).unwrap();
+        assert!(
+            props.contains_key("title"),
+            "Swagger 2.0: input schema should have body param schema (CreateItemRequest)"
+        );
+        assert!(
+            props.contains_key("amount"),
+            "Swagger 2.0: input schema should have amount"
+        );
+        let required = out.get("required").and_then(|r| r.as_array()).unwrap();
+        assert!(
+            required.iter().any(|v| v.as_str() == Some("title")),
+            "Swagger 2.0: title should be required"
+        );
+    }
+
+    #[test]
+    fn swagger2_input_schema_query_params() {
+        let spec = swagger2_minimal_spec();
+        let out = generate_input_schema(&spec, "/items", "get").unwrap();
+        let props = out.get("properties").and_then(|p| p.as_object()).unwrap();
+        assert!(
+            props.contains_key("page"),
+            "Swagger 2.0: input schema should have query param page"
+        );
+    }
 }

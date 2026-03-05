@@ -63,26 +63,7 @@ pub fn generate_output_schema(
         GenerateTriggerError::SchemaError(format!("No {} method found for path: {}", method, path))
     })?;
 
-    // Extract response schema - try 200, 201, 202
-    let response_schema = method_obj
-        .get("responses")
-        .and_then(|responses| {
-            responses
-                .get("200")
-                .or_else(|| responses.get("201"))
-                .or_else(|| responses.get("202"))
-        })
-        .and_then(|response| {
-            // Resolve $ref if response is a reference
-            let response_resolved = action_mod::schema_generator::resolve_schema(schema, response);
-            response_resolved
-                .as_object()
-                .and_then(|r| r.get("content"))
-                .and_then(|content| content.get("application/json"))
-                .and_then(|json| json.get("schema"))
-                .map(|s| action_mod::schema_generator::resolve_schema(schema, s))
-        })
-        .unwrap_or_else(|| serde_json::json!({}));
+    let response_schema = action_mod::schema_generator::get_response_schema(schema, method_obj);
 
     let mut output_schema = serde_json::Map::new();
     output_schema.insert(
