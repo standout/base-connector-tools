@@ -18,7 +18,7 @@ use action_mod::error::GenerateActionError as ActionError;
 pub fn find_operation_by_id(
     schema: &Value,
     operation_id: &str,
-) -> Result<(String, String), GenerateTriggerError> {
+) -> Result<(String, String, String), GenerateTriggerError> {
     action_mod::schema_generator::find_operation_by_id(schema, operation_id).map_err(|e| match e {
         ActionError::OperationNotFound(op) => GenerateTriggerError::OperationNotFound(op),
         ActionError::SchemaError(msg) => GenerateTriggerError::SchemaError(msg),
@@ -71,7 +71,6 @@ pub fn generate_output_schema(
         serde_json::json!("https://json-schema.org/draft/2020-12/schema"),
     );
     output_schema.insert("type".to_string(), serde_json::json!("object"));
-    output_schema.insert("additionalProperties".to_string(), serde_json::json!(false));
 
     // Check if response is an array - for triggers, we want the schema of a single item
     let resolved = action_mod::schema_generator::resolve_schema(schema, &response_schema);
@@ -113,6 +112,25 @@ pub fn generate_output_schema(
     } else {
         serde_json::Map::new()
     };
+
+    let untyped_postman = resolved
+        .as_object()
+        .and_then(|o| o.get("x-connector-untyped-response"))
+        .and_then(|v| v.as_bool())
+        == Some(true);
+
+    if properties.is_empty() && untyped_postman {
+        output_schema.insert("additionalProperties".to_string(), serde_json::json!(true));
+        if let Some(desc) = resolved
+            .get("description")
+            .and_then(|d| d.as_str())
+            .filter(|s| !s.is_empty())
+        {
+            output_schema.insert("description".to_string(), serde_json::json!(desc));
+        }
+    } else {
+        output_schema.insert("additionalProperties".to_string(), serde_json::json!(false));
+    }
 
     output_schema.insert("properties".to_string(), serde_json::json!(properties));
     Ok(serde_json::json!(output_schema))

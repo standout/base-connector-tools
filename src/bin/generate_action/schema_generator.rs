@@ -184,11 +184,14 @@ fn convert_enum_to_anyof(schema: &mut serde_json::Map<String, Value>) {
     }
 }
 
-/// Find operation by ID in the schema
+/// Find operation by ID in the schema.
+///
+/// Returns `(schema_path, method, api_path)` where `api_path` is the HTTP path template
+/// (`x-connector-api-path` when present, e.g. from Postman conversion, otherwise `schema_path`).
 pub fn find_operation_by_id(
     schema: &Value,
     operation_id: &str,
-) -> Result<(String, String), GenerateActionError> {
+) -> Result<(String, String, String), GenerateActionError> {
     let paths = schema
         .get("paths")
         .ok_or_else(|| GenerateActionError::SchemaError("No paths in schema".to_string()))?;
@@ -204,7 +207,12 @@ pub fn find_operation_by_id(
                     && let Some(op_id_str) = op_id.as_str()
                     && op_id_str == operation_id
                 {
-                    return Ok((path.clone(), method.clone()));
+                    let api_path = method_obj
+                        .get("x-connector-api-path")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(path)
+                        .to_string();
+                    return Ok((path.clone(), method.clone(), api_path));
                 }
             }
         }
@@ -355,66 +363,107 @@ pub fn generate_input_schema(
                 .and_then(|json| json.get("schema"))
                 .map(|s| resolve_schema(schema, s));
 
-            if let Some(body_schema) = request_body_schema
-                && let Some(body_obj) = body_schema.as_object()
-            {
-                // Handle allOf structure
-                if let Some(all_of) = body_obj.get("allOf")
-                    && let Some(all_of_array) = all_of.as_array()
-                {
-                    for schema_part in all_of_array {
-                        let part_resolved = resolve_schema(schema, schema_part);
-                        if let Some(part_obj) = part_resolved.as_object() {
-                            // Merge properties from this part
-                            if let Some(part_properties) = part_obj.get("properties")
-                                && let Some(part_props) = part_properties.as_object()
-                            {
-                                for (key, value) in part_props {
-                                    // Resolve $ref in property values
-                                    let mut prop_value = resolve_refs_recursive(schema, value);
-                                    if let Some(prop_obj) = prop_value.as_object_mut() {
-                                        convert_enum_to_anyof(prop_obj);
+            if let Some(body_schema) = request_body_schema {
+                let body_root = resolve_schema(schema, &body_schema);
+                let mut merged_body_properties = false;
+
+                if let Some(body_obj) = body_root.as_object() {
+                    // Handle allOf structure
+                    if let Some(all_of) = body_obj.get("allOf")
+                        && let Some(all_of_array) = all_of.as_array()
+                    {
+                        for schema_part in all_of_array {
+                            let part_resolved = resolve_schema(schema, schema_part);
+                            if let Some(part_obj) = part_resolved.as_object() {
+                                // Merge properties from this part
+                                if let Some(part_properties) = part_obj.get("properties")
+                                    && let Some(part_props) = part_properties.as_object()
+                                    && !part_props.is_empty()
+                                {
+                                    merged_body_properties = true;
+                                    for (key, value) in part_props {
+                                        // Resolve $ref in property values
+                                        let mut prop_value = resolve_refs_recursive(schema, value);
+                                        if let Some(prop_obj) = prop_value.as_object_mut() {
+                                            convert_enum_to_anyof(prop_obj);
+                                        }
+                                        all_properties.insert(key.clone(), prop_value);
                                     }
-                                    all_properties.insert(key.clone(), prop_value);
+                                }
+
+                                // Merge required fields from this part
+                                if let Some(part_required) = part_obj.get("required")
+                                    && let Some(part_req) = part_required.as_array()
+                                {
+                                    for req in part_req {
+                                        if let Some(req_str) = req.as_str() {
+                                            all_required.push(req_str.to_string());
+                                        }
+                                    }
                                 }
                             }
+                        }
+                    } else {
+                        if let Some(body_properties) = body_obj.get("properties")
+                            && let Some(body_props) = body_properties.as_object()
+                        {
+                            if !body_props.is_empty() {
+                                merged_body_properties = true;
+                            }
+                            for (key, value) in body_props {
+                                // Resolve $ref in property values
+                                let mut prop_value = resolve_refs_recursive(schema, value);
+                                if let Some(prop_obj) = prop_value.as_object_mut() {
+                                    convert_enum_to_anyof(prop_obj);
+                                }
+                                all_properties.insert(key.clone(), prop_value);
+                            }
+                        }
 
-                            // Merge required fields from this part
-                            if let Some(part_required) = part_obj.get("required")
-                                && let Some(part_req) = part_required.as_array()
-                            {
-                                for req in part_req {
-                                    if let Some(req_str) = req.as_str() {
-                                        all_required.push(req_str.to_string());
-                                    }
+                        if let Some(body_required) = body_obj.get("required")
+                            && let Some(body_req) = body_required.as_array()
+                        {
+                            for req in body_req {
+                                if let Some(req_str) = req.as_str() {
+                                    all_required.push(req_str.to_string());
                                 }
                             }
                         }
                     }
-                } else {
-                    // Handle simple properties structure
-                    if let Some(body_properties) = body_obj.get("properties")
-                        && let Some(body_props) = body_properties.as_object()
-                    {
-                        for (key, value) in body_props {
-                            // Resolve $ref in property values
-                            let mut prop_value = resolve_refs_recursive(schema, value);
-                            if let Some(prop_obj) = prop_value.as_object_mut() {
-                                convert_enum_to_anyof(prop_obj);
-                            }
-                            all_properties.insert(key.clone(), prop_value);
-                        }
-                    }
+                }
 
-                    // Merge required fields
-                    if let Some(body_required) = body_obj.get("required")
-                        && let Some(body_req) = body_required.as_array()
+                // Root primitive / array / null schema (e.g. Postman raw array or non-JSON string body)
+                if !merged_body_properties {
+                    if let Some(body_obj) = body_root.as_object()
+                        && let Some(t) = body_obj.get("type").and_then(|x| x.as_str())
+                        && matches!(
+                            t,
+                            "array" | "string" | "number" | "integer" | "boolean" | "null"
+                        )
                     {
-                        for req in body_req {
-                            if let Some(req_str) = req.as_str() {
-                                all_required.push(req_str.to_string());
+                        let field = body_obj
+                            .get("x-connector-body-field-name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("body")
+                            .to_string();
+                        let mut prop_schema = serde_json::Map::new();
+                        prop_schema.insert("type".to_string(), json!(t));
+                        for copy_key in [
+                            "description",
+                            "items",
+                            "format",
+                            "enum",
+                            "anyOf",
+                            "minimum",
+                            "maximum",
+                            "minLength",
+                            "maxLength",
+                        ] {
+                            if let Some(v) = body_obj.get(copy_key) {
+                                prop_schema.insert(copy_key.to_string(), v.clone());
                             }
                         }
+                        all_properties.insert(field, json!(prop_schema));
                     }
                 }
             }
@@ -483,10 +532,30 @@ pub fn generate_output_schema(
         json!("https://json-schema.org/draft/2020-12/schema"),
     );
     output_schema.insert("type".to_string(), json!("object"));
-    output_schema.insert("additionalProperties".to_string(), json!(false));
 
     // Extract properties from the resolved schema
     let properties = extract_properties(schema, &response_schema);
+
+    let resolved_response = resolve_schema(schema, &response_schema);
+    let untyped_postman = resolved_response
+        .as_object()
+        .and_then(|o| o.get("x-connector-untyped-response"))
+        .and_then(|v| v.as_bool())
+        == Some(true);
+
+    if properties.is_empty() && untyped_postman {
+        // Postman (and similar) placeholders have no `properties`; keep the wrapper open.
+        output_schema.insert("additionalProperties".to_string(), json!(true));
+        if let Some(desc) = resolved_response
+            .get("description")
+            .and_then(|d| d.as_str())
+            .filter(|s| !s.is_empty())
+        {
+            output_schema.insert("description".to_string(), json!(desc));
+        }
+    } else {
+        output_schema.insert("additionalProperties".to_string(), json!(false));
+    }
 
     output_schema.insert("properties".to_string(), json!(properties));
 
@@ -592,6 +661,75 @@ mod tests {
         assert!(
             props.contains_key("limit"),
             "OAS 3.0: input schema should have query param limit"
+        );
+    }
+
+    #[test]
+    fn openapi3_input_schema_request_body_root_array() {
+        let spec = json!({
+            "openapi": "3.0.0",
+            "paths": {
+                "/x": {
+                    "post": {
+                        "operationId": "postX",
+                        "requestBody": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "array",
+                                        "x-connector-body-field-name": "body",
+                                        "items": { "type": "integer" }
+                                    }
+                                }
+                            }
+                        },
+                        "responses": { "200": { "description": "OK" } }
+                    }
+                }
+            }
+        });
+        let out = generate_input_schema(&spec, "/x", "post").unwrap();
+        let props = out.get("properties").and_then(|p| p.as_object()).unwrap();
+        let body = props.get("body").unwrap().as_object().unwrap();
+        assert_eq!(body.get("type").and_then(|t| t.as_str()), Some("array"));
+    }
+
+    #[test]
+    fn openapi3_output_schema_untyped_postman_placeholder() {
+        let spec = json!({
+            "openapi": "3.0.0",
+            "paths": {
+                "/x": {
+                    "get": {
+                        "operationId": "getX",
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "additionalProperties": true,
+                                            "x-connector-untyped-response": true,
+                                            "description": "No response schema from Postman."
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        let out = generate_output_schema(&spec, "/x", "get").unwrap();
+        assert_eq!(out.get("additionalProperties"), Some(&json!(true)));
+        assert!(
+            out.get("properties")
+                .and_then(|p| p.as_object())
+                .is_some_and(|m| m.is_empty())
+        );
+        assert_eq!(
+            out.get("description").and_then(|d| d.as_str()),
+            Some("No response schema from Postman.")
         );
     }
 

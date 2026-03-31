@@ -1,3 +1,7 @@
+mod postman_collection;
+
+pub use postman_collection::{ApiSpecError, PostmanConversionError, parse_api_spec};
+
 /// Convert a string to snake_case, handling all non-alphanumeric characters
 ///
 /// This function converts strings to snake_case format, replacing:
