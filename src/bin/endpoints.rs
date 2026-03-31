@@ -1,4 +1,4 @@
-use base_connector_tools::to_snake_case;
+use base_connector_tools::{parse_api_spec, to_snake_case};
 use serde_json::Value;
 use std::env;
 use std::fs;
@@ -7,7 +7,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
-        println!("Usage: endpoints <openapi_url_or_file> [operation_id]");
+        println!("Usage: endpoints <openapi_or_postman_url_or_file> [operation_id]");
         println!("Example: endpoints https://api.example.com/openapi.yaml");
         println!("Example: endpoints ./openapi.yaml");
         println!("Example: endpoints https://api.example.com/openapi.yaml getUsers");
@@ -26,15 +26,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let operation_id = &args[2];
     println!("Discovering endpoint for operationId: {}", operation_id);
 
-    // Load the schema from URL or file
-    let schema_yaml = load_schema(openapi_url)?;
-    let schema_value: serde_yaml::Value = serde_yaml::from_str(&schema_yaml)?;
-    let schema_json: serde_json::Value =
-        serde_json::from_value(serde_json::to_value(schema_value)?)?;
+    let spec_raw = load_schema(openapi_url)?;
+    let schema_json = parse_api_spec(&spec_raw)?;
 
     // Find the operation by operationId
-    let (path, method) = find_operation_by_id(&schema_json, operation_id)?;
-    println!("Found operation: {} {}", method.to_uppercase(), path);
+    let (_schema_path, method, api_path) = find_operation_by_id(&schema_json, operation_id)?;
+    println!("Found operation: {} {}", method.to_uppercase(), api_path);
 
     // Generate endpoint name from operationId (convert camelCase to snake_case)
     let endpoint_name = to_snake_case(operation_id);
@@ -57,7 +54,7 @@ fn load_schema(source: &str) -> Result<String, Box<dyn std::error::Error>> {
 fn find_operation_by_id(
     schema: &Value,
     operation_id: &str,
-) -> Result<(String, String), Box<dyn std::error::Error>> {
+) -> Result<(String, String, String), Box<dyn std::error::Error>> {
     let paths = schema.get("paths").ok_or("No paths in schema")?;
 
     for (path, path_obj) in paths.as_object().unwrap() {
@@ -68,7 +65,12 @@ fn find_operation_by_id(
                     && let Some(op_id_str) = op_id.as_str()
                     && op_id_str == operation_id
                 {
-                    return Ok((path.clone(), method.clone()));
+                    let api_path = method_obj
+                        .get("x-connector-api-path")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(path)
+                        .to_string();
+                    return Ok((path.clone(), method.clone(), api_path));
                 }
             }
         }
@@ -79,14 +81,12 @@ fn find_operation_by_id(
 
 fn print_available_endpoints(openapi_url: &str) -> Result<(), Box<dyn std::error::Error>> {
     if openapi_url.starts_with("http://") || openapi_url.starts_with("https://") {
-        println!("Fetching OpenAPI spec from: {}", openapi_url);
+        println!("Fetching API description from: {}", openapi_url);
     } else {
-        println!("Reading OpenAPI spec from: {}", openapi_url);
+        println!("Reading API description from: {}", openapi_url);
     }
-    let schema_yaml = load_schema(openapi_url)?;
-    let schema_value: serde_yaml::Value = serde_yaml::from_str(&schema_yaml)?;
-    let schema_json: serde_json::Value =
-        serde_json::from_value(serde_json::to_value(schema_value)?)?;
+    let spec_raw = load_schema(openapi_url)?;
+    let schema_json = parse_api_spec(&spec_raw)?;
 
     let paths = schema_json.get("paths").ok_or("No paths in schema")?;
 
@@ -107,6 +107,11 @@ fn print_available_endpoints(openapi_url: &str) -> Result<(), Box<dyn std::error
                         .and_then(|s| s.as_str())
                         .or_else(|| method_obj.get("description").and_then(|d| d.as_str()))
                         .unwrap_or("No description available");
+
+                    let http_path = method_obj
+                        .get("x-connector-api-path")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(path);
 
                     // Check if endpoint is already implemented (as action, trigger, or both)
                     let impl_type = check_operation_implementation(op_id_str);
@@ -138,7 +143,7 @@ fn print_available_endpoints(openapi_url: &str) -> Result<(), Box<dyn std::error
                             status_icon,
                             op_id_str,
                             method.to_uppercase(),
-                            path,
+                            http_path,
                             description
                         );
                     } else {
@@ -148,7 +153,7 @@ fn print_available_endpoints(openapi_url: &str) -> Result<(), Box<dyn std::error
                             op_id_str,
                             name_info,
                             method.to_uppercase(),
-                            path,
+                            http_path,
                             description
                         );
                     }
