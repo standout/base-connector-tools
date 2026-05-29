@@ -1,3 +1,10 @@
+pub mod openapi;
+
+pub use openapi::{
+    FindOperationError, OperationRef, find_operation_by_identifier, iter_operations,
+    operation_lookup_key, synthetic_operation_id,
+};
+
 /// Convert a string to snake_case, handling all non-alphanumeric characters
 ///
 /// This function converts strings to snake_case format, replacing:

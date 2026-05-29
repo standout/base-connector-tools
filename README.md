@@ -72,8 +72,8 @@ generate_action /path/to/openapi.yaml repos/get
 
 **Parameters:**
 - `<openapi_url_or_file>` - URL or path to OpenAPI specification file
-- `<operation_id>` - The operation ID from the OpenAPI spec
-- `[action_name]` - (Optional) Custom name for the action in snake_case format. If omitted, the name will be derived from `operation_id`.
+- `<operation_id>` - `operationId` from the spec when present, otherwise a snake_case id derived from method and path (e.g. `get /orders/{id}` → `get_orders_id`)
+- `[action_name]` - (Optional) Custom name for the action in snake_case format. If omitted, the name will be derived from the operation identifier.
 
 This will:
 - Generate `base_input_schema.json` - Input schema for the action

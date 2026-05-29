@@ -184,35 +184,14 @@ fn convert_enum_to_anyof(schema: &mut serde_json::Map<String, Value>) {
     }
 }
 
-/// Find operation by ID in the schema
+/// Find operation by `operationId` or synthetic id from method + path.
 pub fn find_operation_by_id(
     schema: &Value,
     operation_id: &str,
 ) -> Result<(String, String), GenerateActionError> {
-    let paths = schema
-        .get("paths")
-        .ok_or_else(|| GenerateActionError::SchemaError("No paths in schema".to_string()))?;
-
-    for (path, path_obj) in paths
-        .as_object()
-        .ok_or_else(|| GenerateActionError::SchemaError("Paths is not an object".to_string()))?
-    {
-        if let Some(path_obj) = path_obj.as_object() {
-            for (method, method_obj) in path_obj {
-                if let Some(method_obj) = method_obj.as_object()
-                    && let Some(op_id) = method_obj.get("operationId")
-                    && let Some(op_id_str) = op_id.as_str()
-                    && op_id_str == operation_id
-                {
-                    return Ok((path.clone(), method.clone()));
-                }
-            }
-        }
-    }
-
-    Err(GenerateActionError::OperationNotFound(
-        operation_id.to_string(),
-    ))
+    base_connector_tools::find_operation_by_identifier(schema, operation_id).map_err(|e| {
+        GenerateActionError::OperationNotFound(e.to_string())
+    })
 }
 
 /// Generate input schema for an action

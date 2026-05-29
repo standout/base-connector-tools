@@ -1,4 +1,6 @@
-use base_connector_tools::to_snake_case;
+use base_connector_tools::{
+    find_operation_by_identifier, iter_operations, operation_lookup_key, to_snake_case,
+};
 use serde_json::Value;
 use std::env;
 use std::fs;
@@ -24,7 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let operation_id = &args[2];
-    println!("Discovering endpoint for operationId: {}", operation_id);
+    println!("Discovering endpoint for: {}", operation_id);
 
     // Load the schema from URL or file
     let schema_yaml = load_schema(openapi_url)?;
@@ -32,13 +34,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let schema_json: serde_json::Value =
         serde_json::from_value(serde_json::to_value(schema_value)?)?;
 
-    // Find the operation by operationId
-    let (path, method) = find_operation_by_id(&schema_json, operation_id)?;
+    let (path, method) = find_operation_by_identifier(&schema_json, operation_id)?;
     println!("Found operation: {} {}", method.to_uppercase(), path);
 
-    // Generate endpoint name from operationId (convert camelCase to snake_case)
     let endpoint_name = to_snake_case(operation_id);
-    println!("Generated endpoint name: {}", endpoint_name);
+    println!("Suggested action/trigger name: {}", endpoint_name);
 
     Ok(())
 }
@@ -54,29 +54,6 @@ fn load_schema(source: &str) -> Result<String, Box<dyn std::error::Error>> {
     }
 }
 
-fn find_operation_by_id(
-    schema: &Value,
-    operation_id: &str,
-) -> Result<(String, String), Box<dyn std::error::Error>> {
-    let paths = schema.get("paths").ok_or("No paths in schema")?;
-
-    for (path, path_obj) in paths.as_object().unwrap() {
-        if let Some(path_obj) = path_obj.as_object() {
-            for (method, method_obj) in path_obj {
-                if let Some(method_obj) = method_obj.as_object()
-                    && let Some(op_id) = method_obj.get("operationId")
-                    && let Some(op_id_str) = op_id.as_str()
-                    && op_id_str == operation_id
-                {
-                    return Ok((path.clone(), method.clone()));
-                }
-            }
-        }
-    }
-
-    Err(format!("Operation with ID '{}' not found in schema", operation_id).into())
-}
-
 fn print_available_endpoints(openapi_url: &str) -> Result<(), Box<dyn std::error::Error>> {
     if openapi_url.starts_with("http://") || openapi_url.starts_with("https://") {
         println!("Fetching OpenAPI spec from: {}", openapi_url);
@@ -88,72 +65,72 @@ fn print_available_endpoints(openapi_url: &str) -> Result<(), Box<dyn std::error
     let schema_json: serde_json::Value =
         serde_json::from_value(serde_json::to_value(schema_value)?)?;
 
-    let paths = schema_json.get("paths").ok_or("No paths in schema")?;
+    let operations = iter_operations(&schema_json).map_err(|e| e.to_string())?;
 
     println!("Available operations:");
     println!("🟢 = Action | 🔵 = Trigger | 🟣 = Both | ⚪ = Not implemented");
+    println!("Identifier = operationId from spec, or method + path as snake_case when missing");
     println!();
 
-    for (path, path_obj) in paths.as_object().unwrap() {
-        if let Some(path_obj) = path_obj.as_object() {
-            for (method, method_obj) in path_obj {
-                if let Some(method_obj) = method_obj.as_object()
-                    && let Some(op_id) = method_obj.get("operationId")
-                    && let Some(op_id_str) = op_id.as_str()
-                {
-                    // Get description from summary or description field
-                    let description = method_obj
-                        .get("summary")
-                        .and_then(|s| s.as_str())
-                        .or_else(|| method_obj.get("description").and_then(|d| d.as_str()))
-                        .unwrap_or("No description available");
+    let paths = schema_json.get("paths").ok_or("No paths in schema")?;
 
-                    // Check if endpoint is already implemented (as action, trigger, or both)
-                    let impl_type = check_operation_implementation(op_id_str);
+    for op in &operations {
+        let lookup_id = operation_lookup_key(op);
+        let method_obj = paths
+            .get(&op.path)
+            .and_then(|p| p.get(&op.method))
+            .and_then(|m| m.as_object());
 
-                    let (status_icon, name_info) = match &impl_type {
-                        ImplementationType::Action(names) => {
-                            ("🟢", format!("[action: {}]", names.join(", ")))
-                        }
-                        ImplementationType::Trigger(names) => {
-                            ("🔵", format!("[trigger: {}]", names.join(", ")))
-                        }
-                        ImplementationType::Both {
-                            action_names,
-                            trigger_names,
-                        } => (
-                            "🟣",
-                            format!(
-                                "[action: {}, trigger: {}]",
-                                action_names.join(", "),
-                                trigger_names.join(", ")
-                            ),
-                        ),
-                        ImplementationType::None => ("⚪", String::new()),
-                    };
+        let description = method_obj
+            .and_then(|m| m.get("summary"))
+            .and_then(|s| s.as_str())
+            .or_else(|| {
+                method_obj
+                    .and_then(|m| m.get("description"))
+                    .and_then(|d| d.as_str())
+            })
+            .unwrap_or("No description available");
 
-                    if name_info.is_empty() {
-                        println!(
-                            "  {} {} - {} {} - {}",
-                            status_icon,
-                            op_id_str,
-                            method.to_uppercase(),
-                            path,
-                            description
-                        );
-                    } else {
-                        println!(
-                            "  {} {} {} - {} {} - {}",
-                            status_icon,
-                            op_id_str,
-                            name_info,
-                            method.to_uppercase(),
-                            path,
-                            description
-                        );
-                    }
-                }
+        let impl_type = check_operation_implementation(&lookup_id);
+
+        let (status_icon, name_info) = match &impl_type {
+            ImplementationType::Action(names) => ("🟢", format!("[action: {}]", names.join(", "))),
+            ImplementationType::Trigger(names) => {
+                ("🔵", format!("[trigger: {}]", names.join(", ")))
             }
+            ImplementationType::Both {
+                action_names,
+                trigger_names,
+            } => (
+                "🟣",
+                format!(
+                    "[action: {}, trigger: {}]",
+                    action_names.join(", "),
+                    trigger_names.join(", ")
+                ),
+            ),
+            ImplementationType::None => ("⚪", String::new()),
+        };
+
+        if name_info.is_empty() {
+            println!(
+                "  {} {} - {} {} - {}",
+                status_icon,
+                lookup_id,
+                op.method.to_uppercase(),
+                op.path,
+                description
+            );
+        } else {
+            println!(
+                "  {} {} {} - {} {} - {}",
+                status_icon,
+                lookup_id,
+                name_info,
+                op.method.to_uppercase(),
+                op.path,
+                description
+            );
         }
     }
 

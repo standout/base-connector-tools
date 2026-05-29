@@ -19,7 +19,7 @@ fn main() -> Result<(), GenerateActionError> {
             "Example: generate_action https://api.example.com/openapi.yaml getUsers my_custom_name"
         );
         println!("\nTo see available endpoints, run: endpoints <openapi_url_or_file>");
-        println!("\nIf action_name is omitted, it will be derived from operation_id (snake_case).");
+        println!("\nIf action_name is omitted, it will be derived from the operation identifier (snake_case).");
         return Ok(());
     }
 
@@ -41,7 +41,7 @@ fn main() -> Result<(), GenerateActionError> {
     } else {
         to_snake_case(operation_id)
     };
-    println!("Generating action for operationId: {}", operation_id);
+    println!("Generating action for: {}", operation_id);
     if openapi_url.starts_with("http://") || openapi_url.starts_with("https://") {
         println!("Fetching OpenAPI spec from: {}", openapi_url);
     } else {
