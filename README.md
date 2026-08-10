@@ -10,6 +10,8 @@ Development tools for generating connector actions and triggers from **OpenAPI**
 cargo install --git https://github.com/standout/base-connector-tools.git --bin endpoints
 cargo install --git https://github.com/standout/base-connector-tools.git --bin generate_action
 cargo install --git https://github.com/standout/base-connector-tools.git --bin generate_trigger
+cargo install --git https://github.com/standout/base-connector-tools.git --bin generate_connection_strategy
+cargo install --git https://github.com/standout/base-connector-tools.git --bin connection_strategies
 ```
 
 ### From Local Source
@@ -20,6 +22,8 @@ cd base-connector-tools
 cargo install --path . --bin endpoints
 cargo install --path . --bin generate_action
 cargo install --path . --bin generate_trigger
+cargo install --path . --bin generate_connection_strategy
+cargo install --path . --bin connection_strategies
 ```
 
 ## Usage
@@ -94,6 +98,67 @@ This will:
 
 The generated files will be placed in `src/actions/<action_name>/` directory.
 
+### Connection Strategies
+
+List OAuth metadata and suggested strategies before generating config:
+
+```bash
+# Prefer --issuer for most SaaS (few APIs publish RFC 9728 protected-resource metadata)
+connection_strategies --issuer https://accounts.google.com
+connection_strategies --issuer https://accounts.google.com oauth2
+connection_strategies --issuer https://accounts.google.com --json
+```
+
+With a strategy id, the tool prints a ready-to-run `generate_connection_strategy` command.
+
+### Generate Connection Strategy
+
+Generate `connection-config.json` from an OAuth issuer's well-known metadata (RFC 8414 / OIDC discovery):
+
+```bash
+generate_connection_strategy \
+  --api-base-url https://www.googleapis.com \
+  --issuer https://accounts.google.com \
+  --client-id-env GOOGLE_CLIENT_ID \
+  --client-secret-env GOOGLE_CLIENT_SECRET \
+  --scopes https://www.googleapis.com/auth/drive.readonly \
+  --post-connect-path /drive/v3/about?fields=user \
+  -o src/connection-config.json
+```
+
+This fetches OAuth discovery metadata at build time:
+
+1. `GET {api}/.well-known/oauth-protected-resource` (RFC 9728) when available
+2. `authorization_servers[0]` → issuer
+3. `GET {issuer}/.well-known/oauth-authorization-server` or `openid-configuration`
+
+`--issuer` is required for most real APIs. Output matches app_bridge connection-config schema v2 (`authorization_server` + `oauth_client`, Bearer runtime headers, optional `post_connect`).
+
+If `-o` already exists, the new strategy is **appended** (same `id` replaces the old entry). Use `--replace` to overwrite the file, `--all-strategies` to generate every suggested grant in one go, and `--set-default` to update `default_strategy`.
+
+```bash
+# Append another strategy (e.g. different scopes / id) to an existing config
+generate_connection_strategy \
+  --api-base-url https://www.googleapis.com \
+  --issuer https://accounts.google.com \
+  --strategy-id oauth2_calendar \
+  --client-id-env GOOGLE_CLIENT_ID \
+  --client-secret-env GOOGLE_CLIENT_SECRET \
+  --scopes https://www.googleapis.com/auth/calendar.readonly \
+  -o src/connection-config.json
+
+# Or generate all suggested strategies at once
+generate_connection_strategy \
+  --api-base-url https://www.googleapis.com \
+  --issuer https://accounts.google.com \
+  --client-id-env GOOGLE_CLIENT_ID \
+  --client-secret-env GOOGLE_CLIENT_SECRET \
+  --all-strategies \
+  -o src/connection-config.json
+```
+
+The connector can export the file via `include_str!("connection-config.json")` in `connections.rs`.
+
 ### Generate Trigger
 
 Generate trigger code and schemas for a specific operation:
@@ -148,4 +213,5 @@ cargo build --release
 The binaries will be available in `target/release/`:
 - `target/release/endpoints`
 - `target/release/generate_action`
-- `target/release/generate_trigger`
+- `target/release/generate_connection_strategy`
+- `target/release/connection_strategies`

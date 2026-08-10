@@ -1,5 +1,13 @@
+mod oauth_metadata;
 mod postman_collection;
 
+pub use oauth_metadata::{
+    build_connection_config, build_strategy, connection_strategies, fetch_metadata,
+    fetch_protected_resource_metadata, merge_strategy_into_config, resolve_metadata,
+    suggest_strategies, ConnectionDiscovery, GenerateConnectionConfigOptions,
+    OAuthAuthorizationServerMetadata, OAuthProtectedResourceMetadata, ResolveMetadataOptions,
+    ResolvedMetadata, SuggestedStrategy,
+};
 pub use postman_collection::{ApiSpecError, PostmanConversionError, parse_api_spec};
 
 /// Convert a string to snake_case, handling all non-alphanumeric characters
