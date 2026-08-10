@@ -1,6 +1,6 @@
 # Base Connector Tools
 
-Development tools for generating connector actions and triggers from OpenAPI specifications.
+Development tools for generating connector actions and triggers from **OpenAPI** specifications or **Postman Collection** JSON (v2.x).
 
 ## Installation
 
@@ -10,6 +10,8 @@ Development tools for generating connector actions and triggers from OpenAPI spe
 cargo install --git https://github.com/standout/base-connector-tools.git --bin endpoints
 cargo install --git https://github.com/standout/base-connector-tools.git --bin generate_action
 cargo install --git https://github.com/standout/base-connector-tools.git --bin generate_trigger
+cargo install --git https://github.com/standout/base-connector-tools.git --bin generate_connection_strategy
+cargo install --git https://github.com/standout/base-connector-tools.git --bin connection_strategies
 ```
 
 ### From Local Source
@@ -20,16 +22,30 @@ cd base-connector-tools
 cargo install --path . --bin endpoints
 cargo install --path . --bin generate_action
 cargo install --path . --bin generate_trigger
+cargo install --path . --bin generate_connection_strategy
+cargo install --path . --bin connection_strategies
 ```
 
 ## Usage
 
+The same commands accept an OpenAPI YAML/JSON file or URL, or a Postman Collection JSON file or URL. For Postman, each request becomes an operation; the **operation ID** shown by `endpoints` is derived from folder and request names (see `endpoints` output).
+
+### Postman collections: limitations
+
+Postman is supported for discovery and codegen, but collections carry much less structure than OpenAPI:
+
+- **No response schema** — Collections do not define response body shapes. Generated output schemas are intentionally open (any JSON object) with a note to refine them from docs or real responses.
+- **Input schema is often incomplete** — It is inferred from saved **raw** bodies (when they are valid JSON), query params, and path templates. Bodies that are plain text, empty, or invalid JSON become a generic `body` string field. Postman `{{variables}}` in JSON are approximated (replaced with `null` for parsing) so keys can still be inferred; values may be wrong until you edit the schema.
+- **Same URL + method** — Many requests can share one path (e.g. RPC-style APIs). Each request still gets a unique internal ID; use the operation ID from `endpoints`, not only the path.
+
+Prefer **OpenAPI** when you need accurate request/response schemas; use **Postman** when that is all you have, then tighten `base_input_schema.json` / `base_output_schema.json` (or `input_schema.json` / `output_schema.json` for triggers) by hand.
+
 ### Endpoints
 
-Discover available endpoints from an OpenAPI specification:
+Discover available operations from an OpenAPI specification or Postman collection:
 
 ```bash
-endpoints <openapi_url_or_file>
+endpoints <openapi_or_postman_url_or_file>
 ```
 
 **Examples:**
@@ -54,7 +70,7 @@ This will list all available operations with their HTTP methods and paths.
 Generate action code and schemas for a specific operation:
 
 ```bash
-generate_action <openapi_url_or_file> <operation_id> [action_name]
+generate_action <openapi_or_postman_url_or_file> <operation_id> [action_name]
 ```
 
 **Examples:**
@@ -71,8 +87,8 @@ generate_action /path/to/openapi.yaml repos/get
 ```
 
 **Parameters:**
-- `<openapi_url_or_file>` - URL or path to OpenAPI specification file
-- `<operation_id>` - The operation ID from the OpenAPI spec
+- `<openapi_or_postman_url_or_file>` - URL or path to an OpenAPI spec or Postman Collection JSON
+- `<operation_id>` - The operation ID from the spec (`operationId` in OpenAPI, or the ID printed by `endpoints` for Postman)
 - `[action_name]` - (Optional) Custom name for the action in snake_case format. If omitted, the name will be derived from `operation_id`.
 
 This will:
@@ -82,12 +98,73 @@ This will:
 
 The generated files will be placed in `src/actions/<action_name>/` directory.
 
+### Connection Strategies
+
+List OAuth metadata and suggested strategies before generating config:
+
+```bash
+# Prefer --issuer for most SaaS (few APIs publish RFC 9728 protected-resource metadata)
+connection_strategies --issuer https://accounts.google.com
+connection_strategies --issuer https://accounts.google.com oauth2
+connection_strategies --issuer https://accounts.google.com --json
+```
+
+With a strategy id, the tool prints a ready-to-run `generate_connection_strategy` command.
+
+### Generate Connection Strategy
+
+Generate `connection-config.json` from an OAuth issuer's well-known metadata (RFC 8414 / OIDC discovery):
+
+```bash
+generate_connection_strategy \
+  --api-base-url https://www.googleapis.com \
+  --issuer https://accounts.google.com \
+  --client-id-env GOOGLE_CLIENT_ID \
+  --client-secret-env GOOGLE_CLIENT_SECRET \
+  --scopes https://www.googleapis.com/auth/drive.readonly \
+  --post-connect-path /drive/v3/about?fields=user \
+  -o src/connection-config.json
+```
+
+This fetches OAuth discovery metadata at build time:
+
+1. `GET {api}/.well-known/oauth-protected-resource` (RFC 9728) when available
+2. `authorization_servers[0]` → issuer
+3. `GET {issuer}/.well-known/oauth-authorization-server` or `openid-configuration`
+
+`--issuer` is required for most real APIs. Output matches app_bridge connection-config schema v2 (`authorization_server` + `oauth_client`, Bearer runtime headers, optional `post_connect`).
+
+If `-o` already exists, the new strategy is **appended** (same `id` replaces the old entry). Use `--replace` to overwrite the file, `--all-strategies` to generate every suggested grant in one go, and `--set-default` to update `default_strategy`.
+
+```bash
+# Append another strategy (e.g. different scopes / id) to an existing config
+generate_connection_strategy \
+  --api-base-url https://www.googleapis.com \
+  --issuer https://accounts.google.com \
+  --strategy-id oauth2_calendar \
+  --client-id-env GOOGLE_CLIENT_ID \
+  --client-secret-env GOOGLE_CLIENT_SECRET \
+  --scopes https://www.googleapis.com/auth/calendar.readonly \
+  -o src/connection-config.json
+
+# Or generate all suggested strategies at once
+generate_connection_strategy \
+  --api-base-url https://www.googleapis.com \
+  --issuer https://accounts.google.com \
+  --client-id-env GOOGLE_CLIENT_ID \
+  --client-secret-env GOOGLE_CLIENT_SECRET \
+  --all-strategies \
+  -o src/connection-config.json
+```
+
+The connector can export the file via `include_str!("connection-config.json")` in `connections.rs`.
+
 ### Generate Trigger
 
 Generate trigger code and schemas for a specific operation:
 
 ```bash
-generate_trigger <openapi_url_or_file> <operation_id> [trigger_name]
+generate_trigger <openapi_or_postman_url_or_file> <operation_id> [trigger_name]
 ```
 
 **Examples:**
@@ -106,13 +183,13 @@ generate_trigger /path/to/openapi.yaml repos/list
 **Note:** When using `./example.json` or `example.json`, the file should be in the current working directory where you run the command.
 
 **Parameters:**
-- `<openapi_url_or_file>` - URL or path to OpenAPI specification file
-- `<operation_id>` - The operation ID from the OpenAPI spec
+- `<openapi_or_postman_url_or_file>` - URL or path to an OpenAPI spec or Postman Collection JSON
+- `<operation_id>` - The operation ID from the spec or from `endpoints` (Postman)
 - `[trigger_name]` - (Optional) Custom name for the trigger in snake_case format. If omitted, the name will be derived from `operation_id`.
 
 This will:
 - Generate `input_schema.json` - Input schema for the trigger (typically empty)
-- Generate `output_schema.json` - Output schema for each event
+- Generate `output_schema.json` - Output schema for each event (for Postman sources, see limitations above—no response schema in the collection)
 - Generate `fetch_events.rs` - Rust code for fetching trigger events
 
 The generated files will be placed in `src/triggers/<trigger_name>/` directory.
@@ -136,4 +213,5 @@ cargo build --release
 The binaries will be available in `target/release/`:
 - `target/release/endpoints`
 - `target/release/generate_action`
-- `target/release/generate_trigger`
+- `target/release/generate_connection_strategy`
+- `target/release/connection_strategies`

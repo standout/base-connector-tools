@@ -4,6 +4,7 @@ use std::io::{self, Write};
 
 mod generate_trigger;
 
+use base_connector_tools::parse_api_spec;
 use generate_trigger::{
     GenerateTriggerError, find_operation_by_id, generate_executor_code, generate_input_schema,
     generate_output_schema, to_snake_case,
@@ -13,13 +14,16 @@ fn main() -> Result<(), GenerateTriggerError> {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 3 {
-        println!("Usage: generate_trigger <openapi_url_or_file> <operation_id> [trigger_name]");
+        println!(
+            "Usage: generate_trigger <openapi_or_postman_url_or_file> <operation_id> [trigger_name]"
+        );
         println!("Example: generate_trigger https://api.example.com/openapi.yaml getUsers");
         println!("Example: generate_trigger ./openapi.yaml getUsers");
         println!(
             "Example: generate_trigger https://api.example.com/openapi.yaml getUsers my_custom_name"
         );
-        println!("\nTo see available endpoints, run: endpoints <openapi_url_or_file>");
+        println!("Example: generate_trigger https://example.com/api/collection.json list_users");
+        println!("\nTo see available endpoints, run: endpoints <openapi_or_postman_url_or_file>");
         println!(
             "\nIf trigger_name is omitted, it will be derived from operation_id (snake_case)."
         );
@@ -46,26 +50,23 @@ fn main() -> Result<(), GenerateTriggerError> {
     };
     println!("Generating trigger for operationId: {}", operation_id);
     if openapi_url.starts_with("http://") || openapi_url.starts_with("https://") {
-        println!("Fetching OpenAPI spec from: {}", openapi_url);
+        println!("Fetching API description from: {}", openapi_url);
     } else {
-        println!("Reading OpenAPI spec from: {}", openapi_url);
+        println!("Reading API description from: {}", openapi_url);
     }
 
-    // Load the schema from URL or file
-    let schema_yaml = if openapi_url.starts_with("http://") || openapi_url.starts_with("https://") {
+    let spec_raw = if openapi_url.starts_with("http://") || openapi_url.starts_with("https://") {
         reqwest::blocking::get(openapi_url)?.text()?
     } else {
         fs::read_to_string(openapi_url)?
     };
 
-    // Parse YAML and convert to JSON
-    let schema_value: serde_yaml::Value = serde_yaml::from_str(&schema_yaml)?;
-    let schema_json: serde_json::Value =
-        serde_json::from_value(serde_json::to_value(schema_value)?)?;
+    let schema_json =
+        parse_api_spec(&spec_raw).map_err(|e| GenerateTriggerError::SchemaError(e.to_string()))?;
 
     // Find the operation by operationId
-    let (path, method) = find_operation_by_id(&schema_json, operation_id)?;
-    println!("Using endpoint: {} {}", &method, &path);
+    let (path, method, api_path) = find_operation_by_id(&schema_json, operation_id)?;
+    println!("Using endpoint: {} {}", &method, &api_path);
 
     println!("Using trigger name: {}", trigger_name);
 
@@ -107,7 +108,8 @@ fn main() -> Result<(), GenerateTriggerError> {
 
     // Generate trigger
     println!("Generating trigger...");
-    let trigger_code = generate_executor_code(&schema_json, &trigger_name, &path, &method, &path)?;
+    let trigger_code =
+        generate_executor_code(&schema_json, &trigger_name, &path, &method, &api_path)?;
     let trigger_file = format!("{}/fetch_events.rs", trigger_dir);
     fs::write(&trigger_file, trigger_code)?;
     println!("Generated: {}", trigger_file);
@@ -115,7 +117,7 @@ fn main() -> Result<(), GenerateTriggerError> {
     // Write metadata file to track operation_id
     let metadata = serde_json::json!({
         "operation_id": operation_id,
-        "path": path,
+        "path": api_path,
         "method": method,
         "trigger_name": trigger_name
     });

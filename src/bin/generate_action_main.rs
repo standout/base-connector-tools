@@ -3,6 +3,7 @@ use std::fs;
 use std::io::{self, Write};
 
 mod generate_action;
+use base_connector_tools::parse_api_spec;
 use generate_action::{
     GenerateActionError, find_operation_by_id, generate_executor_code, generate_input_schema,
     generate_output_schema, to_snake_case,
@@ -12,13 +13,16 @@ fn main() -> Result<(), GenerateActionError> {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 3 {
-        println!("Usage: generate_action <openapi_url_or_file> <operation_id> [action_name]");
+        println!(
+            "Usage: generate_action <openapi_or_postman_url_or_file> <operation_id> [action_name]"
+        );
         println!("Example: generate_action https://api.example.com/openapi.yaml getUsers");
         println!("Example: generate_action ./openapi.yaml getUsers");
         println!(
             "Example: generate_action https://api.example.com/openapi.yaml getUsers my_custom_name"
         );
-        println!("\nTo see available endpoints, run: endpoints <openapi_url_or_file>");
+        println!("Example: generate_action https://example.com/api/collection.json list_users");
+        println!("\nTo see available endpoints, run: endpoints <openapi_or_postman_url_or_file>");
         println!("\nIf action_name is omitted, it will be derived from operation_id (snake_case).");
         return Ok(());
     }
@@ -43,26 +47,24 @@ fn main() -> Result<(), GenerateActionError> {
     };
     println!("Generating action for operationId: {}", operation_id);
     if openapi_url.starts_with("http://") || openapi_url.starts_with("https://") {
-        println!("Fetching OpenAPI spec from: {}", openapi_url);
+        println!("Fetching API description from: {}", openapi_url);
     } else {
-        println!("Reading OpenAPI spec from: {}", openapi_url);
+        println!("Reading API description from: {}", openapi_url);
     }
 
-    // Load the schema from URL or file
-    let schema_yaml = if openapi_url.starts_with("http://") || openapi_url.starts_with("https://") {
+    // Load OpenAPI YAML/JSON or Postman Collection JSON
+    let spec_raw = if openapi_url.starts_with("http://") || openapi_url.starts_with("https://") {
         reqwest::blocking::get(openapi_url)?.text()?
     } else {
         fs::read_to_string(openapi_url)?
     };
 
-    // Parse YAML and convert to JSON
-    let schema_value: serde_yaml::Value = serde_yaml::from_str(&schema_yaml)?;
-    let schema_json: serde_json::Value =
-        serde_json::from_value(serde_json::to_value(schema_value)?)?;
+    let schema_json =
+        parse_api_spec(&spec_raw).map_err(|e| GenerateActionError::SchemaError(e.to_string()))?;
 
     // Find the operation by operationId
-    let (path, method) = find_operation_by_id(&schema_json, operation_id)?;
-    println!("Using endpoint: {} {}", &method, &path);
+    let (path, method, api_path) = find_operation_by_id(&schema_json, operation_id)?;
+    println!("Using endpoint: {} {}", &method, &api_path);
 
     println!("Using action name: {}", action_name);
 
@@ -104,7 +106,8 @@ fn main() -> Result<(), GenerateActionError> {
 
     // Generate action
     println!("Generating action...");
-    let action_code = generate_executor_code(&schema_json, &action_name, &path, &method, &path)?;
+    let action_code =
+        generate_executor_code(&schema_json, &action_name, &path, &method, &api_path)?;
     let action_file = format!("{}/action.rs", action_dir);
     fs::write(&action_file, action_code)?;
     println!("Generated: {}", action_file);
@@ -112,7 +115,7 @@ fn main() -> Result<(), GenerateActionError> {
     // Write metadata file to track operation_id
     let metadata = serde_json::json!({
         "operation_id": operation_id,
-        "path": path,
+        "path": api_path,
         "method": method,
         "action_name": action_name
     });
