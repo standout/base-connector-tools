@@ -137,3 +137,9 @@ The binaries will be available in `target/release/`:
 - `target/release/endpoints`
 - `target/release/generate_action`
 - `target/release/generate_trigger`
+
+## Unsigned candidate packaging
+
+See [candidate envelope v2](candidate/README.md) for the CI-independent packaging
+and inert verification CLI, shared conformance vectors and optional RSpec adapter.
+This does not publish connectors or establish trusted producer identity.

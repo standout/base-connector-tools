@@ -60,3 +60,5 @@ $RECYCLE.BIN/
 
 src/triggers
 src/actions
+
+__pycache__/

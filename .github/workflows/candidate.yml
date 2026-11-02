@@ -1,0 +1,13 @@
+name: Candidate envelope conformance
+on: push
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: python3 -m unittest discover -s candidate -p 'test_*.py'
+      - name: External producer without CI identity
+        run: env -i /usr/bin/python3 candidate/make_fixture.py /tmp/external-candidate
+      - run: python3 candidate/candidate.py verify /tmp/external-candidate --expected-revision revision-42

@@ -1,0 +1,21 @@
+{
+  "artifact_sha256": "24eaf3439a60c96764c4f2c92a0a81b52bd4fe5d5b91f090184a0f6486b1bf29",
+  "build_reference": "urn:example:build:12",
+  "checks": [
+    {
+      "name": "envelope-fixture-shape-only",
+      "status": "passed"
+    }
+  ],
+  "contract_sha256": "e198c351a2864688bac8143ce9309735c0e8eebcedf8ec28d1efae58aa327f46",
+  "details": {
+    "executable_connector_tested": false
+  },
+  "source": {
+    "reference": "urn:example:external-source",
+    "revision": "revision-42"
+  },
+  "status": "passed",
+  "test_reference": "urn:example:test:12",
+  "wit": "5.0.0"
+}

@@ -1,0 +1,30 @@
+{
+  "artifact": {
+    "file": "connector.wasm",
+    "sha256": "24eaf3439a60c96764c4f2c92a0a81b52bd4fe5d5b91f090184a0f6486b1bf29",
+    "size": 8,
+    "wit": "5.0.0"
+  },
+  "build_reference": "urn:example:build:12",
+  "contract": {
+    "file": "contract.json",
+    "sha256": "e198c351a2864688bac8143ce9309735c0e8eebcedf8ec28d1efae58aa327f46",
+    "size": 63
+  },
+  "format": "integrationer.verified-wasm-candidate.v2",
+  "origin_verified": false,
+  "producer": "urn:example:external-producer",
+  "profile": "conformance_fixture",
+  "publication_authorized": false,
+  "published": false,
+  "source": {
+    "reference": "urn:example:external-source",
+    "revision": "revision-42"
+  },
+  "tests": {
+    "file": "tests.json",
+    "sha256": "ac9c8a77c8f95b46950fea9d5659d07a9a06cd6508ef8fc7272ee95193d75e2b",
+    "size": 568
+  },
+  "tool": "base-connector-tools/candidate@0.1.0"
+}
