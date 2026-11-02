@@ -1,0 +1,19 @@
+[
+  {"name":"valid-external","accept":true,"edits":[]},
+  {"name":"tampered-wasm","accept":false,"edits":[{"op":"append","file":"connector.wasm","text":"x"}]},
+  {"name":"wrong-revision","accept":false,"expected_revision":"different-revision","edits":[]},
+  {"name":"wrong-wit","accept":false,"expected_wit":"4.1.0","edits":[]},
+  {"name":"missing-tests","accept":false,"edits":[{"op":"delete","file":"tests.json"}]},
+  {"name":"failed-tests-with-rebound-digest","accept":false,"edits":[{"op":"set","file":"tests.json","path":["status"],"value":"failed"},{"op":"rebind","file":"tests.json","field":"tests"}]},
+  {"name":"missing-checks-with-rebound-digest","accept":false,"edits":[{"op":"set","file":"tests.json","path":["checks"],"value":[]},{"op":"rebind","file":"tests.json","field":"tests"}]},
+  {"name":"tests-from-other-revision","accept":false,"edits":[{"op":"set","file":"tests.json","path":["source","revision"],"value":"other"},{"op":"rebind","file":"tests.json","field":"tests"}]},
+  {"name":"contract-wit-mismatch","accept":false,"edits":[{"op":"set","file":"contract.json","path":["wit"],"value":"4.1.0"},{"op":"rebind","file":"contract.json","field":"contract"}]},
+  {"name":"unexpected-file","accept":false,"edits":[{"op":"append","file":"extra.json","text":"{}"}]},
+  {"name":"origin-claim","accept":false,"edits":[{"op":"set","file":"manifest.json","path":["origin_verified"],"value":true}]},
+  {"name":"publication-claim","accept":false,"edits":[{"op":"set","file":"manifest.json","path":["publication_authorized"],"value":true}]},
+  {"name":"diagnostic-profile-v1","accept":false,"edits":[{"op":"set","file":"manifest.json","path":["format"],"value":"integrationer.verified-wasm-fixture.v1"}]},
+  {"name":"path-traversal-reference","accept":false,"edits":[{"op":"set","file":"manifest.json","path":["artifact","file"],"value":"../connector.wasm"}]},
+  {"name":"duplicate-json-key","accept":false,"edits":[{"op":"replace","file":"manifest.json","text":"{\"format\":1,\"format\":2}"}]},
+  {"name":"symlink","accept":false,"edits":[{"op":"symlink","file":"tests.json","target":"contract.json"}]},
+  {"name":"changed-size","accept":false,"edits":[{"op":"set","file":"manifest.json","path":["artifact","size"],"value":9}]}
+]
