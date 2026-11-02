@@ -65,7 +65,7 @@ class Conformance(unittest.TestCase):
             (bundle / 'contract.json').write_bytes(b' ' * (candidate.LIMITS['contract.json'] + 1))
             with self.assertRaisesRegex(ValueError, 'size_limit'):
                 candidate.validate(bundle, 'revision-42')
-        for data in [b'{"x":NaN}', b'{"x":1e999}', b'"\\ud800"', b'[' * 34 + b'0' + b']' * 34, b'\xff']:
+        for data in [b'{"x":NaN}', b'{"x":1e999}', b'"\\ud800"', b'[' * 34 + b'0' + b']' * 34, b'\xff', b'9' * 129]:
             with self.assertRaises((ValueError, UnicodeError)):
                 candidate.decode(data)
 

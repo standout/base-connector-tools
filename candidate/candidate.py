@@ -43,7 +43,10 @@ def pairs(items):
 def decode(data):
     def invalid(value):
         raise ValueError('non_finite_json')
-    result = json.loads(data.decode('utf-8'), object_pairs_hook=pairs, parse_constant=invalid)
+    def integer(value):
+        require(len(value.lstrip('-')) <= 128, 'integer_digit_limit')
+        return int(value)
+    result = json.loads(data.decode('utf-8'), object_pairs_hook=pairs, parse_constant=invalid, parse_int=integer)
     def walk(value, depth=0):
         require(depth <= 32, 'json_depth_limit')
         if isinstance(value, str):

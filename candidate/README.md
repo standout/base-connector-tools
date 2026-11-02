@@ -27,7 +27,9 @@ Exactly four ordinary files in a directory (no archives, links or extra files):
 All hashes are lowercase SHA-256 over **raw file bytes**, including JSON whitespace
 and trailing newlines. There is no canonicalization. JSON must be UTF-8 without
 BOM, duplicate keys, nonfinite numbers or unpaired surrogates; nesting is limited
-to 32. The writer emits sorted UTF-8 JSON as a convenience, not a verification
+to 32. Integers allow at most 128 decimal digits; fractional/exponent numbers
+must be finite binary64 values. Identity/reference strings contain 1–512 characters
+and no ASCII control characters. The writer emits sorted UTF-8 JSON as a convenience, not a verification
 rule. Manifest/contract/test/check structural fields are exact; JSON Schema bodies
 and test details are extensible objects. No archive paths or URL fetching exist.
 `vectors/valid-external` is a byte-for-byte example. `vectors/cases.json` defines
