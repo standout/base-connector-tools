@@ -186,7 +186,8 @@ def main():
         if args.expected_manifest is not None:
             require(sha(read(args.bundle / 'manifest.json', LIMITS['manifest.json'])) == args.expected_manifest, 'manifest_mismatch')
         result = validate(args.bundle, args.expected_revision, args.expected_wasm, args.expected_wit)
-    print(json.dumps({'format': result['format'], 'sha256': result['artifact']['sha256'],
+    print(json.dumps({'format': result['format'], 'profile': result['profile'],
+                      'executable': False, 'sha256': result['artifact']['sha256'],
                       'origin_verified': False, 'publication_authorized': False}))
 
 

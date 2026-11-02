@@ -56,7 +56,10 @@ class Conformance(unittest.TestCase):
             bundle = Path(folder) / 'bundle'
             subprocess.run([sys.executable, str(ROOT / 'make_fixture.py'), str(bundle)], env={}, check=True)
             result = subprocess.run([sys.executable, str(ROOT / 'candidate.py'), 'verify', str(bundle), '--expected-revision', 'revision-42'], env={}, check=True, capture_output=True, text=True)
-            self.assertFalse(json.loads(result.stdout)['publication_authorized'])
+            response = json.loads(result.stdout)
+            self.assertFalse(response['publication_authorized'])
+            self.assertFalse(response['executable'])
+            self.assertEqual(response['profile'], 'conformance_fixture')
 
     def test_size_and_json_limits(self):
         with tempfile.TemporaryDirectory() as folder:
