@@ -24,7 +24,7 @@ def run(args):
                        env=dict(os.environ, CONNECTOR_WASM_PATH=str(wasm)), check=True)
         report = candidate.decode(candidate.read(report_path, candidate.LIMITS['tests.json']))
         summary = report['summary']
-        candidate.require(summary['example_count'] > 0 and all(summary.get(k, 0) == 0 for k in
+        candidate.require(type(summary['example_count']) is int and summary['example_count'] == len(report['examples']) > 0 and all(type(summary[k]) is int and summary[k] == 0 for k in
                           ['failure_count', 'pending_count', 'errors_outside_of_examples_count']), 'rspec_not_passed')
         candidate.require(all(example['status'] == 'passed' for example in report['examples']), 'rspec_example_failed')
         candidate.require(original == candidate.sha(candidate.read(wasm, candidate.LIMITS['connector.wasm'])), 'wasm_changed_during_tests')
