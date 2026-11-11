@@ -62,7 +62,7 @@ fn main() -> Result<(), GenerateActionError> {
 
     // Find the operation by operationId
     let (path, method) = find_operation_by_id(&schema_json, operation_id)?;
-    println!("Using endpoint: {} {}", &method, &path);
+    println!("Using endpoint: {} {}", method, path);
 
     println!("Using action name: {}", action_name);
 

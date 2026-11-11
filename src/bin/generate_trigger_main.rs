@@ -65,7 +65,7 @@ fn main() -> Result<(), GenerateTriggerError> {
 
     // Find the operation by operationId
     let (path, method) = find_operation_by_id(&schema_json, operation_id)?;
-    println!("Using endpoint: {} {}", &method, &path);
+    println!("Using endpoint: {} {}", method, path);
 
     println!("Using trigger name: {}", trigger_name);
 
