@@ -52,6 +52,14 @@ impl TemplateManager {
             GenerateTriggerError::TemplateError(format!("Template '{}' not found", template_name))
         })?;
         let mut result = template.clone();
+        if result.contains("{SCHEMA_FUNCTIONS}") {
+            let wit = fs::read_to_string("wit/standout-app.wit")?;
+            result = result.replace(
+                "{SCHEMA_FUNCTIONS}",
+                &base_connector_tools::schema_functions("Trigger", &wit),
+            );
+        }
+
         for (key, value) in variables {
             let placeholder = format!("{{{}}}", key);
             result = result.replace(&placeholder, value);

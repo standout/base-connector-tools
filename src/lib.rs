@@ -36,3 +36,44 @@ pub fn to_snake_case(input: &str) -> String {
     // Remove leading/trailing underscores
     result.trim_matches('_').to_string()
 }
+
+/// Generate schema exports matching the WIT bundled with the target connector.
+pub fn schema_functions(kind: &str, wit: &str) -> String {
+    let v6 = wit
+        .lines()
+        .any(|line| line.trim().starts_with("package standout:app@6."));
+    let prefix = if kind == "Action" { "base_" } else { "" };
+    let template = if v6 {
+        include_str!("../build_templates/schema_v6.rs.template")
+    } else {
+        include_str!("../build_templates/schema_legacy.rs.template")
+    };
+    ["input", "output"]
+        .map(|direction| {
+            template
+                .replace("{KIND}", kind)
+                .replace("{DIRECTION}", direction)
+                .replace("{PREFIX}", prefix)
+        })
+        .join("\n")
+}
+
+#[cfg(test)]
+mod schema_tests {
+    use super::*;
+
+    #[test]
+    fn schema_exports_match_the_target_connector() {
+        for (kind, prefix) in [("Action", "base_"), ("Trigger", "")] {
+            let old = schema_functions(kind, "package standout:app@5.0.0;");
+            let new = schema_functions(kind, "package standout:app@6.0.0;");
+            for direction in ["input", "output"] {
+                for code in [&old, &new] {
+                    assert!(code.contains(&format!("{prefix}{direction}_schema.json")));
+                }
+            }
+            assert!(old.contains("Result<serde_json::Value"));
+            assert!(new.contains("SchemaResponse::Complete"));
+        }
+    }
+}

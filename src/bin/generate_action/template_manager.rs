@@ -66,6 +66,13 @@ impl TemplateManager {
         })?;
 
         let mut result = template.clone();
+        if result.contains("{SCHEMA_FUNCTIONS}") {
+            let wit = fs::read_to_string("wit/standout-app.wit")?;
+            result = result.replace(
+                "{SCHEMA_FUNCTIONS}",
+                &base_connector_tools::schema_functions("Action", &wit),
+            );
+        }
 
         for (key, value) in variables {
             let placeholder = format!("{{{}}}", key);
