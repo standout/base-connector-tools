@@ -139,21 +139,7 @@ pub fn fetch_events(context: TriggerContext) -> Result<TriggerResponse, AppError
     })
 }
 
-/// Get the input schema for this trigger
-#[allow(dead_code)]
-pub fn input_schema(_context: &TriggerContext) -> Result<serde_json::Value, AppError> {
-    let base_schema = include_str!("input_schema.json");
-    let schema: serde_json::Value = serde_json::from_str(base_schema).unwrap();
-    Ok(schema)
-}
-
-/// Get the output schema for this trigger
-#[allow(dead_code)]
-pub fn output_schema(_context: &TriggerContext) -> Result<serde_json::Value, AppError> {
-    let base_schema = include_str!("output_schema.json");
-    let schema: serde_json::Value = serde_json::from_str(base_schema).unwrap();
-    Ok(schema)
-}
+{SCHEMA_FUNCTIONS}
 
 /// Add a query parameter to the query_parts vector if it exists in store_data
 #[allow(dead_code)]

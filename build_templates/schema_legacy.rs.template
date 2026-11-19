@@ -1,0 +1,4 @@
+pub fn {DIRECTION}_schema(_context: &{KIND}Context) -> Result<serde_json::Value, AppError> {
+    let schema = include_str!("{PREFIX}{DIRECTION}_schema.json");
+    Ok(serde_json::from_str(schema).expect("valid generated schema"))
+}

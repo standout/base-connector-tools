@@ -1,0 +1,4 @@
+pub fn {DIRECTION}_schema(_context: &crate::standout::app::types::{KIND}SchemaContext) -> Result<crate::standout::app::types::SchemaResponse, AppError> {
+    let schema = include_str!("{PREFIX}{DIRECTION}_schema.json");
+    Ok(crate::standout::app::types::SchemaResponse::Complete(schema.into()))
+}
